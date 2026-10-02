@@ -6,7 +6,7 @@ Le détail complet du jeu est dans [BRIEF.md](BRIEF.md). C'est la référence du
 
 ## Jouer
 
-Lien : [à compléter à la fin du lot 0]
+Lien : https://pinocchi00.github.io/Stagger/
 
 Le jeu se joue dans le navigateur, téléphone tenu à l'horizontale. Il fonctionne aussi sur PC, à la souris et au clavier.
 
@@ -25,7 +25,7 @@ Le jeu se joue dans le navigateur, téléphone tenu à l'horizontale. Il fonctio
 
 ## État des lots
 
-- [ ] 0. Mise en place
+- [x] 0. Mise en place (reste à activer GitHub Pages, voir ci-dessous)
 - [ ] 1. La parade seule
 - [ ] 2. Les trois gestes
 - [ ] 3. La garde et les queues
@@ -49,8 +49,12 @@ Le jeu se joue dans le navigateur, téléphone tenu à l'horizontale. Il fonctio
 - `README.md` : cette page.
 - `index.html` : la page du jeu, créée au lot 0.
 - `images/` : les images du boss et du décor. Pour les lots 1 à 4 : `boss-attente.jpg`, `boss-vive-elan.jpg`, `boss-vive-coup.jpg`.
-- Le fichier de réglages, créé au lot 0.
+- `settings.js` : le fichier de réglages, créé au lot 0.
 
 ## Technique
 
 HTML, JavaScript et Canvas 2D, sans moteur ni framework. Rien à installer. Mise en ligne sur GitHub Pages.
+
+## Activer GitHub Pages (une seule fois)
+
+Dépôt sur GitHub, Settings, Pages, Source « Deploy from a branch », branche `main`, dossier `/ (root)`, Save. Le lien est actif après une à deux minutes.
