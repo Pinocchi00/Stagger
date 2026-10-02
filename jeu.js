@@ -74,6 +74,10 @@ function recommencer() {
     vie: S.vie,
     endurance: S.enduranceMax,
     derniereAction: -1e9,
+    paradeAt: -1e9,       // instant du toucher de parade
+    finParade: -1e9,
+    reculMs: S.coupRecuMs,
+    reculDist: S.coupRecuRecul,
     attaqueId: 0,         // numéro de l'attaque en cours
     attaqueSource: null,  // qui l'a lancée : identifiant du doigt ou 'clavier'
     coutAttaque: 0,       // endurance payée pour l'attaque en cours
@@ -181,7 +185,7 @@ function lancerAttaque(source) {
 }
 
 function attaquer(source) {
-  if (jeu.etat !== 'combat' || hero.endurance <= 0 || hero.etat === 'roulade' || hero.etat === 'touche') return;
+  if (jeu.etat !== 'combat' || hero.endurance <= 0 || hero.etat === 'roulade' || hero.etat === 'touche' || hero.etat === 'parade') return;
   if (hero.etat === 'attaque') { hero.enfile = true; hero.fileSource = source; return; }
   lancerAttaque(source);
 }
@@ -198,7 +202,7 @@ function annulerAttaque(source) {
 }
 
 function rouler(dir) {
-  if (jeu.etat !== 'combat' || hero.endurance <= 0 || hero.etat === 'roulade' || hero.etat === 'touche') return;
+  if (jeu.etat !== 'combat' || hero.endurance <= 0 || hero.etat === 'roulade' || hero.etat === 'touche' || hero.etat === 'parade') return;
   payer(S.enduranceRoulade);
   jouer('roulade');
   hero.etat = 'roulade';
@@ -215,8 +219,67 @@ function heroTouche(degats) {
   hero.etat = 'touche';
   hero.t = 0;
   hero.reculDir = hero.x >= boss.x ? 1 : -1;
+  hero.reculMs = S.coupRecuMs;
+  hero.reculDist = S.coupRecuRecul;
   hero.enfile = false;
   if (hero.vie <= 0) { jeu.etat = 'mort'; jeu.t = 0; jouer('mort'); }
+}
+
+// ---- Parade ----
+let blanc = null;         // dernier impact de parade : { debut, type, x, y, etoile, lignes }
+
+function parer() {
+  if (jeu.etat !== 'combat' || hero.endurance <= 0) return;
+  if (hero.etat !== 'libre' && hero.etat !== 'attaque') return;
+  if (gt - hero.finParade < S.paradeRecupMs) return;
+  payer(S.enduranceParade);
+  hero.etat = 'parade';
+  hero.t = 0;
+  hero.paradeAt = gt;
+  hero.enfile = false;
+}
+
+// Le coup du boss est-il paré ? Le toucher doit tomber dans les dernières S.paradeSimpleMs avant l'impact
+function resultatParade() {
+  if (hero.etat !== 'parade') return null;
+  const avant = gt - hero.paradeAt;
+  if (avant > S.paradeSimpleMs) return null;
+  return avant <= S.paradeParfaiteMs ? 'parfaite' : 'simple';
+}
+
+function creerImpact(type) {
+  const B = S.impactBlanc;
+  const pointes = type === 'parfaite' ? B.etoilePointes : B.simplePointes;
+  blanc = {
+    debut: rt,
+    type,
+    x: hero.x + hero.dir * S.heroLargeur * S.contactX,
+    y: S.solY - S.heroHauteur * S.contactY,
+    etoile: Array.from({ length: pointes * 2 }, () => 0.8 + Math.random() * 0.4),
+    lignes: Array.from({ length: type === 'parfaite' ? B.lignes : B.etincelles }, () => [Math.random() * Math.PI * 2, Math.random()]),
+  };
+}
+
+function heroParade(type) {
+  creerImpact(type);
+  hero.finParade = gt;
+  hero.t = 0;
+  if (type === 'parfaite') {
+    hero.etat = 'libre';
+    boss.dernierCoup = gt;
+    boss.posture += S.postureParadeParfaite;
+    if (boss.posture >= S.postureMax) vaciller();
+    impact(S.arretParadeParfaiteMs, S.tremblementParadeParfaiteMs, S.tremblementParadeParfaitePx);
+    jouer('paradeParfaite');
+  } else {
+    payer(S.enduranceParadeSimple);
+    hero.etat = 'touche';
+    hero.reculDir = hero.x >= boss.x ? 1 : -1;
+    hero.reculMs = S.paradeSimpleReculMs;
+    hero.reculDist = S.paradeSimpleRecul;
+    impact(S.arretParadeSimpleMs, S.tremblementParadeSimpleMs, S.tremblementParadeSimplePx);
+    jouer('paradeSimple');
+  }
 }
 
 // ---------- Commandes ----------
@@ -255,13 +318,14 @@ window.addEventListener('pointerdown', e => {
   if (touches.has(e.pointerId)) return;
   const cote = e.clientX < window.innerWidth / 2 ? 'gauche' : 'droite';
   if (cote === 'gauche' && marcheTactile() !== null) return; // un seul pouce gauche
-  touches.set(e.pointerId, { cote, x0: e.clientX, y0: e.clientY, x: e.clientX, fait: false });
+  touches.set(e.pointerId, { cote, x0: e.clientX, y0: e.clientY, t0: e.timeStamp, x: e.clientX, depl: 0, fait: false });
   if (cote === 'droite' && !portrait()) attaquer(e.pointerId); // l'attaque part dès la pose du doigt
 });
 window.addEventListener('pointermove', e => {
   const p = touches.get(e.pointerId);
   if (!p) return;
   p.x = e.clientX;
+  p.depl = Math.max(p.depl, Math.abs(p.x - p.x0));
   if (p.cote === 'droite' && !p.fait && Math.abs(p.x - p.x0) >= S.glisserMinPx) {
     p.fait = true;
     annulerAttaque(e.pointerId);
@@ -269,19 +333,23 @@ window.addEventListener('pointermove', e => {
   }
 });
 function relacher(e) {
+  const p = touches.get(e.pointerId);
   touches.delete(e.pointerId);
+  // Un toucher bref et immobile à gauche est une parade
+  if (p && e.type === 'pointerup' && p.cote === 'gauche' && p.depl < S.zoneMortePx && e.timeStamp - p.t0 <= S.paradeToucherMaxMs) parer();
 }
 window.addEventListener('pointerup', e => { relancer(); relacher(e); });
 window.addEventListener('pointercancel', relacher);
 
 window.addEventListener('keydown', e => {
-  if (['ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight'].includes(e.code)) e.preventDefault();
+  if (['ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyX'].includes(e.code)) e.preventDefault();
   initAudio();
   if (e.repeat) return;
   clavier.add(e.code);
   if (demarrer()) return;
   relancer();
   if (e.code === 'Space') attaquer('clavier');
+  if (e.code === 'KeyX') parer();
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') rouler(direction() || hero.dir);
 });
 window.addEventListener('keyup', e => clavier.delete(e.code));
@@ -328,8 +396,10 @@ function majHero(dt) {
     hero.x += hero.rouladeDir * S.rouladeLargeurs * S.heroLargeur * dt / S.rouladeMs;
     if (hero.t >= S.rouladeMs) { hero.etat = 'libre'; hero.t = 0; }
   } else if (hero.etat === 'touche') {
-    hero.x += hero.reculDir * S.coupRecuRecul * dt / S.coupRecuMs;
-    if (hero.t >= S.coupRecuMs) { hero.etat = 'libre'; hero.t = 0; }
+    hero.x += hero.reculDir * hero.reculDist * dt / hero.reculMs;
+    if (hero.t >= hero.reculMs) { hero.etat = 'libre'; hero.t = 0; }
+  } else if (hero.etat === 'parade') {
+    if (hero.t >= S.paradeMs) { hero.etat = 'libre'; hero.t = 0; hero.finParade = gt; }
   } else {
     if (!hero.frappe && hero.t >= S.attaqueMs * S.attaqueImpactRatio) { hero.frappe = true; frapperBoss(); }
     if (hero.t >= S.attaqueMs && jeu.etat === 'combat') {
@@ -435,7 +505,11 @@ function majBoss(dt) {
       boss.frappes++;
       jouer('fauchage');
       const [g, dr] = zoneFauchage();
-      if (chevauche(heroG(), heroD(), g, dr)) heroTouche(S.fauchageDegats);
+      if (chevauche(heroG(), heroD(), g, dr)) {
+        const parade = resultatParade();
+        if (parade) heroParade(parade);
+        else heroTouche(S.fauchageDegats);
+      }
     }
     // Le double Fauchage se retourne vers le héros avant le second coup
     if (boss.variante === 'double' && !boss.retourne && boss.t >= temps[0] + S.fauchageZoneMs) {
@@ -857,6 +931,88 @@ function dessinerHaloHeros() {
   ctx.fillRect(hero.x - H.rayon, y - H.rayon, H.rayon * 2, H.rayon * 2);
 }
 
+// Silhouette noire d'une vignette, pour l'image d'impact
+const silhouettes = {};
+function dessinerSilhouette(nom, f, x, miroir, sp) {
+  const cle = sp === S.bossSprite ? 'boss' : 'heros';
+  if (!silhouettes[cle]) silhouettes[cle] = document.createElement('canvas');
+  const c = silhouettes[cle], g = c.getContext('2d');
+  c.width = sp.largeur;
+  c.height = sp.hauteur;
+  g.clearRect(0, 0, c.width, c.height);
+  g.drawImage(images[nom], f * sp.largeur, 0, sp.largeur, sp.hauteur, 0, 0, sp.largeur, sp.hauteur);
+  g.globalCompositeOperation = 'source-in';
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, c.width, c.height);
+  dessinerSprite(c, 0, x, miroir, sp);
+}
+
+function etoile(b, rayon, creux, contour, remplissage) {
+  const n = b.etoile.length;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const a = i * Math.PI * 2 / n - Math.PI / 2;
+    const r = rayon * b.etoile[i] * (i % 2 ? creux : 1);
+    ctx[i ? 'lineTo' : 'moveTo'](b.x + Math.cos(a) * r, b.y + Math.sin(a) * r);
+  }
+  ctx.closePath();
+  ctx.fillStyle = remplissage;
+  ctx.fill();
+  if (contour) {
+    ctx.lineWidth = contour;
+    ctx.lineJoin = 'miter';
+    ctx.strokeStyle = '#000';
+    ctx.stroke();
+  }
+}
+
+// Parade parfaite : image d'impact de dessin animé, écran blanc, silhouettes noires, étoile et traits.
+// Parade simple : voile blanc léger, petite étoile et étincelles.
+function dessinerImpactBlanc() {
+  if (!blanc) return 0;
+  const B = S.impactBlanc, age = rt - blanc.debut, parfaite = blanc.type === 'parfaite';
+  const duree = parfaite ? B.parfaiteMs : B.simpleMs;
+  if (age >= duree) return 0;
+  const p = age / duree;
+  ctx.save();
+  if (parfaite) {
+    const alpha = p < B.tenue ? 1 : 1 - (p - B.tenue) / (1 - B.tenue);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(-5000, -5000, 10000, 10000);
+    ctx.strokeStyle = '#000';
+    ctx.lineCap = 'round';
+    for (const [a, v] of blanc.lignes) {
+      const r0 = B.etoileRayon * B.lignesMin, r1 = B.etoileRayon * (B.lignesMin + (B.lignesMax - B.lignesMin) * v);
+      ctx.lineWidth = B.lignesEpaisseur * (0.5 + v);
+      ctx.beginPath();
+      ctx.moveTo(blanc.x + Math.cos(a) * r0, blanc.y + Math.sin(a) * r0);
+      ctx.lineTo(blanc.x + Math.cos(a) * r1, blanc.y + Math.sin(a) * r1);
+      ctx.stroke();
+    }
+    etoile(blanc, B.etoileRayon, B.etoileCreux, B.etoileContour, '#fff');
+    const [nomB, fb] = frameBoss();
+    dessinerSilhouette(nomB, fb, boss.x, boss.dir > 0, S.bossSprite);
+    const [nomH, fh] = frameHero();
+    dessinerSilhouette(nomH, fh, hero.x, hero.etat === 'roulade' ? hero.rouladeDir < 0 : hero.dir < 0, S.heroSprite);
+  } else {
+    ctx.globalAlpha = 1 - p;
+    ctx.fillStyle = `rgba(255,255,255,${B.simpleAlpha})`;
+    ctx.fillRect(-5000, -5000, 10000, 10000);
+    etoile(blanc, B.simpleRayon, B.etoileCreux, 0, '#fff6d8');
+    ctx.strokeStyle = '#fff6d8';
+    ctx.lineWidth = 2;
+    for (const [a, v] of blanc.lignes) {
+      ctx.beginPath();
+      ctx.moveTo(blanc.x + Math.cos(a) * B.simpleRayon * 0.8, blanc.y + Math.sin(a) * B.simpleRayon * 0.8);
+      ctx.lineTo(blanc.x + Math.cos(a) * B.simpleRayon * (1.2 + v * 1.4), blanc.y + Math.sin(a) * B.simpleRayon * (1.2 + v * 1.4));
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  return parfaite ? 1 : 0;
+}
+
 function dessinerParticulesMonde() {
   const Q = S.queues, G = S.signaux;
   for (const p of braises) {
@@ -921,7 +1077,7 @@ function barre(x, y, largeur, part, couleur) {
 }
 
 // ---------- Sprites ----------
-const noms = ['heros-attente', 'heros-course', 'heros-roulade', 'heros-attaque1', 'heros-attaque2', 'heros-touche', 'heros-mort',
+const noms = ['heros-attente', 'heros-course', 'heros-roulade', 'heros-attaque1', 'heros-attaque2', 'heros-touche', 'heros-mort', 'heros-parade',
   'boss-attente', 'boss-marche', 'boss-fauchage', 'boss-incantation', 'boss-sort', 'boss-touche', 'boss-mort'];
 const images = {};
 let chargees = 0;
@@ -951,6 +1107,7 @@ function frameHero() {
     return [nom, part(hero.t, S.attaqueMs, nbFrames(nom))];
   }
   if (hero.etat === 'touche') return ['heros-touche', 0];
+  if (hero.etat === 'parade') return ['heros-parade', 0];
   const nom = jeu.etat === 'combat' && direction() !== 0 ? 'heros-course' : 'heros-attente';
   return [nom, boucle_(nbFrames(nom))];
 }
@@ -1150,11 +1307,12 @@ function dessiner() {
   dessinerParticulesMonde();
   dessinerBrume(true);
   dessinerPremierPlan(cx);
+  const imageBlanche = dessinerImpactBlanc();
   ctx.restore();
 
   // Couches posées sur l'image, en pixels de l'écran
   ctx.setTransform(d, 0, 0, d, 0, 0);
-  dessinerAtmosphere();
+  if (!imageBlanche) dessinerAtmosphere();
 
   // Interface : seule la vie du boss est affichée, la vie et l'endurance du héros se lisent dans l'image
   ctx.setTransform(d * kui, 0, 0, d * kui, 0, 0);

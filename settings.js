@@ -233,6 +233,43 @@ const SETTINGS = {
     soufflesMax: 40,
   },
 
+  // Parade (ajout après le lot 7) : un toucher bref dans la moitié gauche, au bon moment
+  paradeMs: 300,              // durée de la garde levée
+  paradeParfaiteMs: 120,      // parfaite : le toucher tombe dans ce délai avant l'impact
+  paradeSimpleMs: 250,        // simple : le toucher tombe dans ce délai avant l'impact
+  paradeRecupMs: 200,         // temps avant de pouvoir parer de nouveau
+  paradeToucherMaxMs: 220,    // durée maximale du toucher pour compter comme parade
+  enduranceParade: 10,
+  enduranceParadeSimple: 20,  // la parade simple use en plus l'endurance
+  paradeSimpleRecul: 40,
+  paradeSimpleReculMs: 150,
+  postureParadeParfaite: 1.5, // crans de posture infligés au boss par une parade parfaite
+  arretParadeParfaiteMs: 120,
+  arretParadeSimpleMs: 50,
+  tremblementParadeParfaiteMs: 200,
+  tremblementParadeParfaitePx: 9,
+  tremblementParadeSimpleMs: 120,
+  tremblementParadeSimplePx: 4,
+  contactX: 0.65,             // point de contact devant le héros, en largeurs de héros
+  contactY: 0.55,             // hauteur du point de contact, en part de la hauteur du héros
+  impactBlanc: {
+    parfaiteMs: 120,          // image d'impact : écran blanc, silhouettes noires, étoile et traits
+    tenue: 0.7,               // part de la durée où le blanc est plein
+    etoilePointes: 14,
+    etoileRayon: 62,
+    etoileCreux: 0.5,
+    etoileContour: 5,
+    lignes: 22,
+    lignesMin: 1.15,          // début des traits, en rayons de l'étoile
+    lignesMax: 3.6,
+    lignesEpaisseur: 4,
+    simpleMs: 90,             // impact léger : voile blanc, petite étoile et étincelles
+    simpleAlpha: 0.4,
+    simplePointes: 9,
+    simpleRayon: 30,
+    etincelles: 10,
+  },
+
   // Impacts (lot 5)
   arretCoupDonneMs: 50,       // arrêt sur image quand le héros touche le boss
   arretCoupRecuMs: 90,        // arrêt sur image quand le héros est touché
@@ -266,6 +303,17 @@ const SETTINGS = {
     explosion: [
       { forme: 'sine', f0: 90, f1: 30, duree: 0.5, volume: 0.6 },
       { bruit: true, filtre: 'lowpass', hz: 900, duree: 0.45, volume: 0.45 },
+    ],
+    paradeParfaite: [
+      { forme: 'sine', f0: 2100, duree: 0.55, volume: 0.22 },
+      { forme: 'sine', f0: 3150, duree: 0.55, volume: 0.14 },
+      { forme: 'sine', f0: 4720, duree: 0.5, volume: 0.1 },
+      { forme: 'square', f0: 2100, duree: 0.02, volume: 0.3 },
+    ],
+    paradeSimple: [
+      { forme: 'square', f0: 520, duree: 0.12, volume: 0.15 },
+      { forme: 'square', f0: 780, duree: 0.12, volume: 0.12 },
+      { bruit: true, filtre: 'lowpass', hz: 1800, duree: 0.05, volume: 0.2 },
     ],
     mort: [{ forme: 'sine', f0: 80, f1: 25, duree: 1.0, volume: 0.5 }],
     victoire: [
