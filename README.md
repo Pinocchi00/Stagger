@@ -21,12 +21,13 @@ Le jeu se joue dans le navigateur, téléphone tenu à l'horizontale. Il fonctio
 1. Ouvrir le lien dans le navigateur du téléphone.
 2. Tourner le téléphone à l'horizontale.
 3. Toucher l'écran une fois : le son ne démarre qu'après ce premier toucher.
-4. Après une mise à jour du dépôt, attendre une à deux minutes puis recharger la page. Si rien ne change, ouvrir le lien en navigation privée.
+4. Lot 1 : le boss attaque en boucle. Toucher pour parer. En haut à gauche, l'écart du dernier toucher ; si « pile » donne un écart loin de zéro, régler le décalage avec « − » et « + », puis reporter la valeur dans `decalageTactileMs` de `settings.js` (elle n'est pas sauvegardée).
+5. Après une mise à jour du dépôt, attendre une à deux minutes puis recharger la page. Si rien ne change, ouvrir le lien en navigation privée.
 
 ## État des lots
 
 - [x] 0. Mise en place
-- [ ] 1. La parade seule
+- [x] 1. La parade seule
 - [ ] 2. Les trois gestes
 - [ ] 3. La garde et les queues
 - [ ] 4. Phase 2, victoire et arme
@@ -47,7 +48,8 @@ Le jeu se joue dans le navigateur, téléphone tenu à l'horizontale. Il fonctio
 
 - `BRIEF.md` : le brief complet du jeu.
 - `README.md` : cette page.
-- `index.html` : la page du jeu, créée au lot 0.
+- `index.html` : la page du jeu. `jeu.js` : le code du jeu.
+- `LOT-1.md` : la fiche détaillée du lot 1.
 - `images/` : les images du boss et du décor. Pour les lots 1 à 4 : `boss-attente.jpg`, `boss-vive-elan.jpg`, `boss-vive-coup.jpg`.
 - `settings.js` : le fichier de réglages, créé au lot 0.
 

@@ -5,47 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Grimalkin</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; }
   canvas { display: block; width: 100vw; height: 100vh; background: #000; touch-action: none; }
+  #debug { position: fixed; top: 0; left: 0; padding: 6px 8px; font: 12px monospace; color: #bbb; background: rgba(0,0,0,.55); pointer-events: none; line-height: 1.5; }
+  #debug button { pointer-events: auto; font: inherit; color: #ddd; background: #222; border: 1px solid #555; min-width: 36px; min-height: 28px; margin-left: 4px; }
 </style>
 </head>
 <body>
 <canvas id="jeu"></canvas>
+<div id="debug" hidden>
+  <div id="d-ecart">–</div>
+  <div id="d-serie"></div>
+  <div><span id="d-decalage"></span><button id="d-moins">−</button><button id="d-plus">+</button></div>
+</div>
 <script src="settings.js"></script>
-<script>
-const canvas = document.getElementById('jeu');
-const ctx = canvas.getContext('2d');
-
-function ajuster() {
-  const d = window.devicePixelRatio || 1;
-  canvas.width = Math.round(window.innerWidth * d);
-  canvas.height = Math.round(window.innerHeight * d);
-}
-window.addEventListener('resize', ajuster);
-ajuster();
-
-// Boucle à SETTINGS.fps images par seconde.
-const pas = 1000 / SETTINGS.fps;
-let dernier = 0;
-function boucle(t) {
-  requestAnimationFrame(boucle);
-  if (t - dernier < pas - 1) return;
-  dernier = t;
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-}
-requestAnimationFrame(boucle);
-
-// Plein écran et verrou horizontal : les navigateurs exigent un geste du joueur.
-function pleinEcran() {
-  const el = document.documentElement;
-  const demande = el.requestFullscreen || el.webkitRequestFullscreen;
-  if (!demande || document.fullscreenElement) return;
-  Promise.resolve(demande.call(el))
-    .then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'))
-    .catch(() => {});
-}
-window.addEventListener('pointerdown', pleinEcran);
-</script>
+<script src="jeu.js"></script>
 </body>
 </html>
