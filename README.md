@@ -13,7 +13,7 @@ Le jeu se joue dans le navigateur, téléphone tenu à l'horizontale.
 | Geste | Zone de l'écran | Action |
 | --- | --- | --- |
 | Glisser et maintenir | Moitié gauche | Marcher |
-| Toucher | Moitié droite | Attaquer |
+| Toucher | Moitié droite | Attaquer (dès que le doigt se pose) |
 | Glisser | Moitié droite | Rouler |
 
 Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer, Maj pour rouler.
@@ -32,6 +32,14 @@ Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer, Ma
 - [x] 3. Phase 2 et réglage
 - [x] 4. Les sprites
 - [x] 5. Décor, effets et son
+- [x] 6. Caméra et lisibilité
+- [ ] 7. Boss varié et vacillement
+- [ ] 8. Réglage du combat
+- [ ] 9. Monstres personnalisés
+- [ ] 10. Environnement
+- [ ] 11. Ambiance sonore
+- [ ] 12. Mise en scène
+- [ ] 13. Réglage final
 
 ## Règles du projet
 

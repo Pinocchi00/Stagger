@@ -4,14 +4,15 @@ const SETTINGS = {
   fps: 60,
   dtMaxMs: 100,               // plus long pas de temps accepté entre deux images
 
-  // Arène (lot 1) : unités de jeu, la hauteur de l'arène vaut hauteurArene
-  hauteurArene: 720,
-  solY: 600,                  // hauteur du sol, mesurée depuis le haut
+  // Arène (lots 1 et 6) : unités de jeu
+  arenaLargeur: 1200,         // largeur fixe, avec un mur invisible à chaque bout
+  solY: 600,                  // hauteur du sol dans le monde, mesurée depuis le haut
+  hauteurInterface: 720,      // hauteur de référence des barres et des textes
 
   // Héros (lot 1)
   heroLargeur: 40,
   heroHauteur: 80,
-  heroDepartX: 160,           // position de départ, depuis la gauche
+  heroDepartX: 350,           // position de départ, depuis la gauche
   vie: 100,
   vitesseMarche: 260,         // unités par seconde
 
@@ -26,7 +27,6 @@ const SETTINGS = {
   rouladeMs: 500,
   rouladeLargeurs: 3,         // distance, en largeurs de héros
   rouladeInvulnerableMs: 300,
-  rouladeAplatiRatio: 0.5,    // hauteur du héros pendant la roulade
   rouladeAlpha: 0.45,         // opacité du héros tant qu'il est invulnérable
 
   // Attaque (lot 1)
@@ -40,9 +40,8 @@ const SETTINGS = {
   // Boss (lot 2)
   bossNom: 'Le Boss',         // son nom reste à choisir
   bossVie: 400,
-  bossLargeur: 70,
-  bossHauteurHeros: 3,        // hauteur, en hauteurs de héros
-  bossDepartDroite: 160,      // distance entre son bord droit et le bord de l'écran
+  bossLargeur: 60,
+  bossDepartEcart: 500,       // distance entre le héros et le boss au départ
   bossVitesse: 120,           // marche, unités par seconde
   bossDebutMs: 1000,          // immobilité au début du combat
   bossOuvertureMs: 800,       // immobilité après chaque attaque : l'ouverture
@@ -78,8 +77,9 @@ const SETTINGS = {
   victoireAttenteMs: 800,     // avant de pouvoir relancer après la victoire
 
   // Sprites (lot 4) : taille d'une vignette, point d'appui au sol, échelle
-  heroSprite: { largeur: 120, hauteur: 80, pivotX: 55, pivotY: 80, echelle: 2.16 },
-  bossSprite: { largeur: 140, hauteur: 93, pivotX: 106, pivotY: 92, echelle: 4.4 },
+  heroSprite: { largeur: 120, hauteur: 80, pivotX: 55, pivotY: 80 },
+  bossSprite: { largeur: 140, hauteur: 93, pivotX: 106, pivotY: 92 },
+  echelleSprite: 2.16,        // unités par pixel de sprite, la même pour le héros et le boss
   sortPivotX: 68,             // point d'appui de l'effet du Sort
   animFps: 10,                // images par seconde des animations en boucle
   fauchageFrameImpact: 4,     // vignette du Fauchage qui tombe sur l'impact
@@ -88,17 +88,45 @@ const SETTINGS = {
   // Commandes tactiles (lot 1)
   zoneMortePx: 12,            // glissement minimal du pouce gauche pour marcher
   glisserMinPx: 40,           // glissement minimal du pouce droit pour rouler
-  toucherMaxMs: 250,          // durée maximale d'un toucher pour compter comme attaque
 
   // Affichage (lot 1)
   barreLargeur: 220,
-  barreHauteur: 14,
+  barreHauteur: 28,           // deux fois plus hautes (lot 6)
   barreMarge: 16,
   barreEspace: 8,
   bossBarreLargeur: 520,
-  bossBarreBas: 44,           // distance entre la barre du boss et le bas de l'écran
+  bossBarreBas: 64,           // distance entre la barre du boss et le bas de l'écran
   texteTaille: 48,
   nomTaille: 18,
+
+  // Caméra (lot 6)
+  heroCorpsPx: 37,            // hauteur du corps du héros dans sa planche, en pixels de sprite
+  heroEcranRatio: 0.25,       // part de la hauteur de l'écran occupée par le héros
+  solEcranRatio: 0.82,        // position du sol à l'écran, en part de la hauteur
+  camLisseParSeconde: 5,      // vitesse de rattrapage de la caméra
+  camZoomLisseParSeconde: 3,  // vitesse du recul de la caméra
+  camBordUnites: 80,          // marge gardée de chaque côté des deux personnages
+
+  // Arc du Fauchage (lot 6)
+  arcCouleur: '#ecebf5',
+  arcCentreHauteur: 55,       // hauteur du centre de l'arc au-dessus du sol
+  arcDebutDeg: -50,           // angle de départ, mesuré depuis l'horizontale devant le boss
+  arcFinDeg: 15,
+  arcQueueDeg: 40,            // longueur de la traînée
+  arcRayonVertical: 100,      // hauteur de l'arc, plus basse que sa portée
+  arcEpaisseur: 10,
+  arcSegments: 14,
+
+  // Cercle de runes du Sort (lot 6)
+  runesCouleur: '#a070e0',
+  runesCouleurVive: '#e0ccff',
+  runesAplat: 0.28,           // hauteur du cercle, en part de sa largeur
+  runesNombre: 12,
+  runesTaille: 14,            // taille d'une rune
+  runesTourParSeconde: 0.15,
+  runesPulseHz: 2,            // pulsations par seconde au début
+  runesPulseAccel: 4,         // pulsations ajoutées par seconde à l'approche de l'explosion
+  runesEpaisseur: 3,
 
   // Fond (lot 5) : plans sombres du plus lointain au plus proche
   fond: {

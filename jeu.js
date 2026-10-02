@@ -3,16 +3,16 @@ const S = SETTINGS;
 const canvas = document.getElementById('jeu');
 const ctx = canvas.getContext('2d');
 
-// ---------- Arène ----------
-// L'arène est large comme l'écran : la hauteur est fixe (S.hauteurArene), la largeur suit l'écran.
-let d = 1;
-let k = 1;
-let largeurArene = 0;
+// ---------- Arène et caméra ----------
+// L'arène a une largeur fixe (S.arenaLargeur). La caméra suit le milieu du duel.
+let d = 1;                // pixels de l'appareil par pixel CSS
+let kui = 1;              // échelle de l'interface
 let plans = [];
 
-const boss = { x: 0, w: S.bossLargeur, h: S.heroHauteur * S.bossHauteurHeros };
+const boss = { x: 0, w: S.bossLargeur };
 const hero = {};
-const jeu = { etat: 'combat', t: 0 }; // combat, mort, victoire
+const jeu = { etat: 'depart', t: 0 }; // depart, combat, mort, victoire
+const cam = { x: 0, z: 1 };           // z : pixels CSS par unité
 let gt = 0;               // temps de jeu, ms : n'avance pas pendant un arrêt sur image
 let rt = 0;               // temps réel, ms
 let arret = 0;            // arrêt sur image restant, ms
@@ -23,16 +23,35 @@ function impact(arretMs, duree, amp) {
   tremble = { debut: rt, duree, amp };
 }
 
+const portrait = () => window.innerHeight > window.innerWidth;
+
+// Zoom où les sprites tombent sur un facteur entier de pixels de l'appareil
+function zoomDeBase() {
+  const n = Math.max(1, Math.round(window.innerHeight * d * S.heroEcranRatio / S.heroCorpsPx));
+  return n / S.echelleSprite / d;
+}
+
+function cibleCamera() {
+  const W = window.innerWidth;
+  const zBase = zoomDeBase();
+  const zMin = W / S.arenaLargeur;
+  const ecartX = Math.abs(hero.x - boss.x) + 2 * S.camBordUnites;
+  return { x: (hero.x + boss.x) / 2, z: Math.max(zMin, Math.min(zBase, W / ecartX)) };
+}
+
 function ajuster() {
   d = window.devicePixelRatio || 1;
   canvas.width = Math.round(window.innerWidth * d);
   canvas.height = Math.round(window.innerHeight * d);
-  k = window.innerHeight / S.hauteurArene;
-  largeurArene = window.innerWidth / k;
-  genererFond();
-  if (jeu.etat === 'combat' && boss.etat === 'ouverture' && boss.attaque === 'debut') boss.x = positionBoss();
+  kui = window.innerHeight / S.hauteurInterface;
+  if (hero.x !== undefined) { const c = cibleCamera(); cam.x = c.x; cam.z = c.z; }
 }
-const positionBoss = () => largeurArene - S.bossDepartDroite - boss.w / 2;
+
+function majCamera(dt) {
+  const c = cibleCamera();
+  cam.x += (c.x - cam.x) * (1 - Math.exp(-S.camLisseParSeconde * dt / 1000));
+  cam.z += (c.z - cam.z) * (1 - Math.exp(-S.camZoomLisseParSeconde * dt / 1000));
+}
 
 function recommencer() {
   Object.assign(hero, {
@@ -50,9 +69,13 @@ function recommencer() {
     vie: S.vie,
     endurance: S.enduranceMax,
     derniereAction: -1e9,
+    attaqueId: 0,         // numéro de l'attaque en cours
+    attaqueSource: null,  // qui l'a lancée : identifiant du doigt ou 'clavier'
+    coutAttaque: 0,       // endurance payée pour l'attaque en cours
+    fileSource: null,     // qui a demandé l'attaque enfilée
   });
   Object.assign(boss, {
-    x: positionBoss(),
+    x: S.heroDepartX + S.bossDepartEcart,
     dir: -1,
     vie: S.bossVie,
     etat: 'ouverture',    // marche, fauchage, sort, ouverture
@@ -66,11 +89,16 @@ function recommencer() {
   });
   jeu.etat = 'combat';
   jeu.t = 0;
+  const c = cibleCamera();
+  cam.x = c.x;
+  cam.z = c.z;
 }
 
 window.addEventListener('resize', ajuster);
-ajuster();
+genererFond();
 recommencer();
+jeu.etat = 'depart';
+ajuster();
 
 // ---------- Son ----------
 // Tous les sons sont produits par le code. Ils se débloquent au premier toucher.
@@ -121,14 +149,19 @@ function jouer(nom) {
 // ---------- Héros ----------
 const invulnerable = () => hero.etat === 'roulade' && hero.t < S.rouladeInvulnerableMs;
 
+// Retire l'endurance et rend la somme réellement payée
 function payer(cout) {
-  hero.endurance = Math.max(0, hero.endurance - cout);
+  const paye = Math.min(hero.endurance, cout);
+  hero.endurance -= paye;
   hero.derniereAction = gt;
+  return paye;
 }
 
-function lancerAttaque() {
+function lancerAttaque(source) {
   const n = (hero.derniereAttaqueN === 1 && gt - hero.finAttaque <= S.enchainementMs) ? 2 : 1;
-  payer(S.enduranceAttaque);
+  hero.coutAttaque = payer(S.enduranceAttaque);
+  hero.attaqueId++;
+  hero.attaqueSource = source;
   jouer('attaque');
   hero.etat = 'attaque';
   hero.t = 0;
@@ -137,10 +170,21 @@ function lancerAttaque() {
   hero.enfile = false;
 }
 
-function attaquer() {
+function attaquer(source) {
   if (jeu.etat !== 'combat' || hero.endurance <= 0 || hero.etat === 'roulade' || hero.etat === 'touche') return;
-  if (hero.etat === 'attaque') { hero.enfile = true; return; }
-  lancerAttaque();
+  if (hero.etat === 'attaque') { hero.enfile = true; hero.fileSource = source; return; }
+  lancerAttaque(source);
+}
+
+// Un glissé avant le coup annule l'attaque posée par ce doigt et rend son endurance
+function annulerAttaque(source) {
+  if (hero.etat === 'attaque' && hero.attaqueSource === source && !hero.frappe) {
+    hero.endurance = Math.min(S.enduranceMax, hero.endurance + hero.coutAttaque);
+    hero.etat = 'libre';
+    hero.t = 0;
+  } else if (hero.enfile && hero.fileSource === source) {
+    hero.enfile = false;
+  }
 }
 
 function rouler(dir) {
@@ -188,12 +232,21 @@ function relancer() {
   if (jeu.etat === 'victoire' && jeu.t >= S.victoireAttenteMs) recommencer();
 }
 
+function demarrer() {
+  if (jeu.etat !== 'depart' || portrait()) return false;
+  jeu.etat = 'combat';
+  jeu.t = 0;
+  return true;
+}
+
 window.addEventListener('pointerdown', e => {
   initAudio();
+  if (demarrer()) return;
   if (touches.has(e.pointerId)) return;
   const cote = e.clientX < window.innerWidth / 2 ? 'gauche' : 'droite';
   if (cote === 'gauche' && marcheTactile() !== null) return; // un seul pouce gauche
-  touches.set(e.pointerId, { cote, x0: e.clientX, y0: e.clientY, t0: e.timeStamp, x: e.clientX, fait: false });
+  touches.set(e.pointerId, { cote, x0: e.clientX, y0: e.clientY, x: e.clientX, fait: false });
+  if (cote === 'droite' && !portrait()) attaquer(e.pointerId); // l'attaque part dès la pose du doigt
 });
 window.addEventListener('pointermove', e => {
   const p = touches.get(e.pointerId);
@@ -201,14 +254,12 @@ window.addEventListener('pointermove', e => {
   p.x = e.clientX;
   if (p.cote === 'droite' && !p.fait && Math.abs(p.x - p.x0) >= S.glisserMinPx) {
     p.fait = true;
+    annulerAttaque(e.pointerId);
     rouler(Math.sign(p.x - p.x0));
   }
 });
 function relacher(e) {
-  const p = touches.get(e.pointerId);
-  if (!p) return;
   touches.delete(e.pointerId);
-  if (e.type === 'pointerup' && p.cote === 'droite' && !p.fait && e.timeStamp - p.t0 <= S.toucherMaxMs) attaquer();
 }
 window.addEventListener('pointerup', e => { relancer(); relacher(e); });
 window.addEventListener('pointercancel', relacher);
@@ -218,8 +269,9 @@ window.addEventListener('keydown', e => {
   initAudio();
   if (e.repeat) return;
   clavier.add(e.code);
+  if (demarrer()) return;
   relancer();
-  if (e.code === 'Space') attaquer();
+  if (e.code === 'Space') attaquer('clavier');
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') rouler(direction() || hero.dir);
 });
 window.addEventListener('keyup', e => clavier.delete(e.code));
@@ -269,12 +321,12 @@ function majHero(dt) {
       hero.finAttaque = gt;
       hero.etat = 'libre';
       hero.t = 0;
-      if (hero.enfile && hero.endurance > 0) lancerAttaque();
+      if (hero.enfile && hero.endurance > 0) lancerAttaque(hero.fileSource);
       hero.enfile = false;
     }
   }
 
-  hero.x = Math.max(S.heroLargeur / 2, Math.min(largeurArene - S.heroLargeur / 2, hero.x));
+  hero.x = Math.max(S.heroLargeur / 2, Math.min(S.arenaLargeur - S.heroLargeur / 2, hero.x));
   if (hero.etat !== 'roulade') sortirDuBoss();
 
   if (gt - hero.derniereAction >= S.enduranceRegenDelaiMs) {
@@ -344,7 +396,7 @@ function majBoss(dt) {
     }
   }
 
-  boss.x = Math.max(boss.w / 2, Math.min(largeurArene - boss.w / 2, boss.x));
+  boss.x = Math.max(boss.w / 2, Math.min(S.arenaLargeur - boss.w / 2, boss.x));
 }
 
 function avancer(dt) {
@@ -368,7 +420,7 @@ function genererFond() {
   const marge = S.fond.margeParallaxe;
   plans = S.fond.plans.map(p => {
     const formes = [];
-    for (let x = -marge; x < largeurArene + marge; ) {
+    for (let x = -marge; x < S.arenaLargeur + marge; ) {
       const w = p.largeurMin + alea() * (p.largeurMax - p.largeurMin);
       const h = p.hauteurMin + alea() * (p.hauteurMax - p.hauteurMin);
       formes.push({ x, w, h, cassure: alea() });
@@ -378,13 +430,17 @@ function genererFond() {
   });
 }
 
-function dessinerFond() {
-  const g = ctx.createLinearGradient(0, 0, 0, S.solY);
+// Ciel en coordonnées d'écran, puis plans et sol dans le monde
+function dessinerCiel() {
+  const g = ctx.createLinearGradient(0, 0, 0, window.innerHeight * S.solEcranRatio);
   g.addColorStop(0, S.fond.cielHaut);
   g.addColorStop(1, S.fond.cielBas);
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, largeurArene, S.hauteurArene);
-  const decalage = hero.x - largeurArene / 2;
+  ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+}
+
+function dessinerPlans(cx) {
+  const decalage = cx - S.arenaLargeur / 2;
   for (const p of plans) {
     ctx.fillStyle = p.couleur;
     const dx = -decalage * p.parallaxe;
@@ -408,7 +464,7 @@ function dessinerFond() {
     }
   }
   ctx.fillStyle = S.fond.sol;
-  ctx.fillRect(0, S.solY, largeurArene, S.hauteurArene - S.solY);
+  ctx.fillRect(-S.fond.margeParallaxe, S.solY, S.arenaLargeur + 2 * S.fond.margeParallaxe, S.hauteurInterface * 4);
 }
 
 function barre(x, y, largeur, part, couleur) {
@@ -471,7 +527,7 @@ function frameBoss() {
 
 // Dessine la vignette f d'une planche, les pieds posés sur le sol
 function dessinerSprite(im, f, x, miroir, sp, pivotX = sp.pivotX) {
-  const e = sp.echelle;
+  const e = S.echelleSprite;
   ctx.save();
   ctx.translate(x, S.solY);
   if (miroir) ctx.scale(-1, 1);
@@ -479,70 +535,136 @@ function dessinerSprite(im, f, x, miroir, sp, pivotX = sp.pivotX) {
   ctx.restore();
 }
 
-function dessiner() {
-  ctx.setTransform(d * k, 0, 0, d * k, 0, 0);
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, largeurArene, S.hauteurArene);
+// Arc clair qui suit la faux pendant la frappe du Fauchage
+function dessinerArc() {
+  if (boss.etat !== 'fauchage' || boss.t < S.fauchageAnnonceMs) return;
+  const p = Math.min(1, (boss.t - S.fauchageAnnonceMs) / S.fauchageZoneMs);
+  const rad = Math.PI / 180;
+  const tete = S.arcDebutDeg + (S.arcFinDeg - S.arcDebutDeg) * p;
+  const queue = Math.max(S.arcDebutDeg, tete - S.arcQueueDeg);
+  const cx = boss.x, cy = S.solY - S.arcCentreHauteur;
+  const rayon = S.fauchagePortee + boss.w / 2;
   ctx.save();
+  ctx.beginPath();
+  ctx.rect(-S.fond.margeParallaxe, -S.hauteurInterface * 4, S.arenaLargeur + 2 * S.fond.margeParallaxe, S.hauteurInterface * 4 + S.solY);
+  ctx.clip();
+  ctx.strokeStyle = S.arcCouleur;
+  ctx.lineCap = 'round';
+  const n = S.arcSegments;
+  for (let i = 0; i < n; i++) {
+    const a0 = queue + (tete - queue) * i / n, a1 = queue + (tete - queue) * (i + 1) / n;
+    const u = (i + 1) / n; // 0 à la queue, 1 à la tête
+    ctx.globalAlpha = u;
+    ctx.lineWidth = S.arcEpaisseur * u;
+    ctx.beginPath();
+    ctx.moveTo(cx + boss.dir * rayon * Math.cos(a0 * rad), cy + S.arcRayonVertical * Math.sin(a0 * rad));
+    ctx.lineTo(cx + boss.dir * rayon * Math.cos(a1 * rad), cy + S.arcRayonVertical * Math.sin(a1 * rad));
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Cercle de runes au sol, qui pulse de plus en plus vite jusqu'à l'explosion
+function dessinerRunes(m) {
+  const t = boss.t - m.t0;
+  const frac = Math.min(1, t / S.sortMarqueMs);
+  const explose = boss.applique;
+  const pulse = explose ? 1 : 0.5 + 0.5 * Math.sin(t / 1000 * Math.PI * 2 * (S.runesPulseHz + S.runesPulseAccel * frac));
+  const rx = S.sortRayon * (1 + 0.06 * pulse), ry = rx * S.runesAplat;
+  const couleur = explose ? S.runesCouleurVive : S.runesCouleur;
+  ctx.save();
+  ctx.translate(m.x, S.solY);
+  ctx.strokeStyle = couleur;
+  ctx.fillStyle = couleur;
+  ctx.lineWidth = S.runesEpaisseur;
+  ctx.globalAlpha = 0.45 + 0.55 * pulse;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(0, 0, rx * 0.72, ry * 0.72, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  if (explose) {
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  const tour = t / 1000 * S.runesTourParSeconde * Math.PI * 2;
+  for (let i = 0; i < S.runesNombre; i++) {
+    const a = tour + i * Math.PI * 2 / S.runesNombre;
+    const x = Math.cos(a) * rx * 0.86, y = Math.sin(a) * ry * 0.86;
+    const u = S.runesTaille;
+    ctx.beginPath();
+    if (i % 3 === 0) { ctx.moveTo(x, y - u * 0.5); ctx.lineTo(x, y + u * 0.5); }
+    else if (i % 3 === 1) { ctx.moveTo(x - u * 0.4, y - u * 0.4); ctx.lineTo(x, y + u * 0.4); ctx.lineTo(x + u * 0.4, y - u * 0.4); }
+    else { ctx.moveTo(x - u * 0.4, y); ctx.lineTo(x + u * 0.4, y); ctx.moveTo(x, y - u * 0.4); ctx.lineTo(x, y + u * 0.2); }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function texteCentre(texte, taille) {
+  ctx.fillStyle = '#ccc';
+  ctx.font = `${taille}px Georgia, serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(texte, window.innerWidth / 2, window.innerHeight / 2);
+}
+
+function dessiner() {
+  const W = window.innerWidth, H = window.innerHeight;
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  if (portrait()) {
+    texteCentre('Tourne ton téléphone', Math.min(S.texteTaille * kui, W * 0.09));
+    return;
+  }
+  dessinerCiel();
+  if (!pret()) return;
+
+  // Monde, vu par la caméra
+  const z = cam.z;
+  const demi = W / z / 2;
+  const cx = S.arenaLargeur <= demi * 2 ? S.arenaLargeur / 2 : Math.max(demi, Math.min(S.arenaLargeur - demi, cam.x));
+  ctx.save();
+  ctx.setTransform(d * z, 0, 0, d * z, d * (W / 2 - cx * z), d * (H * S.solEcranRatio - S.solY * z));
   if (tremble && rt - tremble.debut < tremble.duree) {
     const a = tremble.amp * (1 - (rt - tremble.debut) / tremble.duree);
     ctx.translate((Math.random() * 2 - 1) * a, (Math.random() * 2 - 1) * a);
   }
-  dessinerFond();
-  if (!pret()) { ctx.restore(); return; }
   ctx.imageSmoothingEnabled = false;
+  dessinerPlans(cx);
 
-  // Marque du Sort
   if (boss.etat === 'sort' && boss.marque) {
     const m = boss.marque;
-    const explose = boss.applique;
-    ctx.fillStyle = explose ? 'rgba(255,90,60,0.9)' : 'rgba(200,30,30,0.7)';
-    ctx.beginPath();
-    ctx.ellipse(m.x, S.solY + 14, S.sortRayon, 10, 0, 0, Math.PI * 2);
-    ctx.fill();
+    dessinerRunes(m);
     const total = S.sortMarqueMs + S.sortExplosionMs;
     const [im, n] = anim('boss-sort');
     const f = Math.min(n - 1, Math.floor((boss.t - m.t0) / total * n));
     dessinerSprite(im, f, m.x, false, S.bossSprite, S.sortPivotX);
   }
 
-  // Boss
-  {
-    const [nom, f] = frameBoss();
-    dessinerSprite(images[nom], f, boss.x, boss.dir > 0, S.bossSprite);
-  }
+  const [nomB, fb] = frameBoss();
+  dessinerSprite(images[nomB], fb, boss.x, boss.dir > 0, S.bossSprite);
+  dessinerArc();
 
-  // Zone du Fauchage
-  if (boss.etat === 'fauchage' && boss.t >= S.fauchageAnnonceMs) {
-    const [g, dr] = zoneFauchage();
-    ctx.fillStyle = 'rgba(200,30,30,0.6)';
-    ctx.fillRect(g, S.solY - S.heroHauteur * 1.2, dr - g, S.heroHauteur * 1.2);
-  }
-
-  // Héros
-  if (hero.etat === 'attaque') {
-    const portee = S.attaquePorteeLargeurs * S.heroLargeur;
-    const depart = hero.x + hero.dir * S.heroLargeur / 2;
-    ctx.fillStyle = 'rgba(230,230,230,0.25)';
-    ctx.fillRect(Math.min(depart, depart + hero.dir * portee), S.solY - S.heroHauteur, portee, S.heroHauteur);
-  }
   ctx.globalAlpha = invulnerable() ? S.rouladeAlpha : 1;
-  {
-    const [nom, f] = frameHero();
-    const versGauche = hero.etat === 'roulade' ? hero.rouladeDir < 0 : hero.dir < 0;
-    dessinerSprite(images[nom], f, hero.x, versGauche, S.heroSprite);
-  }
+  const [nomH, fh] = frameHero();
+  dessinerSprite(images[nomH], fh, hero.x, hero.etat === 'roulade' ? hero.rouladeDir < 0 : hero.dir < 0, S.heroSprite);
   ctx.globalAlpha = 1;
-
   ctx.restore();
 
-  // Vie et endurance du héros, en haut à gauche
+  // Interface, en unités de référence
+  ctx.setTransform(d * kui, 0, 0, d * kui, 0, 0);
+  const wi = W / kui, hi = H / kui;
   barre(S.barreMarge, S.barreMarge, S.barreLargeur, hero.vie / S.vie, '#a33');
   barre(S.barreMarge, S.barreMarge + S.barreHauteur + S.barreEspace, S.barreLargeur, hero.endurance / S.enduranceMax, '#4a8');
 
-  // Vie du boss, en bas, avec son nom
-  const bx = (largeurArene - S.bossBarreLargeur) / 2;
-  const by = S.hauteurArene - S.bossBarreBas;
+  const bx = (wi - S.bossBarreLargeur) / 2;
+  const by = hi - S.bossBarreBas;
   ctx.fillStyle = '#bbb';
   ctx.font = `${S.nomTaille}px Georgia, serif`;
   ctx.textAlign = 'left';
@@ -550,16 +672,13 @@ function dessiner() {
   ctx.fillText(S.bossNom, bx, by - S.barreEspace / 2);
   barre(bx, by, S.bossBarreLargeur, boss.vie / S.bossVie, '#a33');
 
-  // Mort et victoire
+  // Départ, mort et victoire
   if (jeu.etat !== 'combat') {
     const mort = jeu.etat === 'mort';
     ctx.fillStyle = `rgba(0,0,0,${mort ? Math.min(1, jeu.t / S.mortMs) : 0.6})`;
-    ctx.fillRect(0, 0, largeurArene, S.hauteurArene);
-    ctx.fillStyle = '#ccc';
-    ctx.font = `${S.texteTaille}px Georgia, serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(mort ? 'Mort' : 'Victoire', largeurArene / 2, S.hauteurArene / 2);
+    ctx.fillRect(0, 0, wi, hi);
+    ctx.setTransform(d, 0, 0, d, 0, 0);
+    texteCentre(jeu.etat === 'depart' ? 'Touche pour commencer' : mort ? 'Mort' : 'Victoire', S.texteTaille * kui);
   }
 }
 
@@ -573,8 +692,11 @@ function boucle(now) {
   dernierDessin = now;
   const dt = Math.min(now - precedent, S.dtMaxMs);
   precedent = now;
-  rt += dt;
-  avancer(dt);
+  if (!portrait()) {
+    rt += dt;
+    avancer(dt);
+    majCamera(dt);
+  }
   dessiner();
 }
 requestAnimationFrame(boucle);
