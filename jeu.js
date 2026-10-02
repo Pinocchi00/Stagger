@@ -51,6 +51,7 @@ function recommencer() {
     duree: S.bossDebutMs, // durée de l'ouverture en cours
     applique: false,      // les dégâts de l'attaque en cours ont-ils été infligés
     marque: null,         // marque du Sort : { x, t0 }
+    sortsRestants: 0,     // Sorts à enchaîner après celui en cours (phase 2)
     flash: -1e9,
   });
   jeu.etat = 'combat';
@@ -220,6 +221,8 @@ function majHero(dt) {
 // Écart entre le bord du boss et le bord du héros, négatif s'ils se chevauchent
 const ecart = () => Math.abs(hero.x - boss.x) - boss.w / 2 - S.heroLargeur / 2;
 
+const phase2 = () => boss.vie <= S.bossVie * S.phase2Seuil;
+
 function lancerBoss(etat) {
   boss.etat = etat;
   boss.attaque = etat;
@@ -231,7 +234,7 @@ function lancerBoss(etat) {
 function ouverture() {
   boss.etat = 'ouverture';
   boss.t = 0;
-  boss.duree = S.bossOuvertureMs;
+  boss.duree = phase2() ? S.phase2OuvertureMs : S.bossOuvertureMs;
 }
 
 function zoneFauchage() {
@@ -249,9 +252,9 @@ function majBoss(dt) {
   if (boss.etat === 'marche') {
     boss.dir = hero.x >= boss.x ? 1 : -1;
     const e = ecart();
-    if (e > S.bossDistanceSort) lancerBoss('sort');
+    if (e > S.bossDistanceSort) { boss.sortsRestants = phase2() ? S.phase2Sorts - 1 : 0; lancerBoss('sort'); }
     else if (e <= S.fauchagePortee) lancerBoss('fauchage');
-    else boss.x += boss.dir * S.bossVitesse * dt / 1000;
+    else boss.x += boss.dir * S.bossVitesse * (phase2() ? S.phase2VitesseFacteur : 1) * dt / 1000;
   } else if (boss.etat === 'fauchage') {
     if (!boss.applique && boss.t >= S.fauchageAnnonceMs) {
       boss.applique = true;
@@ -265,7 +268,13 @@ function majBoss(dt) {
       boss.applique = true;
       if (chevauche(heroG(), heroD(), boss.marque.x - S.sortRayon, boss.marque.x + S.sortRayon)) heroTouche(S.sortDegats);
     }
-    if (boss.applique && boss.t >= boss.marque.t0 + S.sortMarqueMs + S.sortExplosionMs) ouverture();
+    if (boss.applique && boss.t >= boss.marque.t0 + S.sortMarqueMs + S.sortExplosionMs) {
+      if (boss.sortsRestants > 0) { boss.sortsRestants--; lancerBoss('sort'); }
+      else if (phase2() && Math.random() < S.phase2FauchageChance) {
+        boss.dir = hero.x >= boss.x ? 1 : -1;
+        lancerBoss('fauchage');
+      } else ouverture();
+    }
   }
 
   boss.x = Math.max(boss.w / 2, Math.min(largeurArene - boss.w / 2, boss.x));

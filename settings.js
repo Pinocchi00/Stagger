@@ -62,6 +62,13 @@ const SETTINGS = {
   sortRayon: 90,              // demi-largeur de la marque au sol
   sortExplosionMs: 150,       // durée d'affichage de l'explosion
 
+  // Phase 2 (lot 3)
+  phase2Seuil: 0.5,           // part de vie du boss sous laquelle la phase 2 commence
+  phase2VitesseFacteur: 1.3,  // marche 30 % plus vite
+  phase2Sorts: 3,             // Sorts lancés à la suite
+  phase2FauchageChance: 0.3,  // chance d'un Fauchage juste après la série de Sorts
+  phase2OuvertureMs: 500,     // ouverture après chaque série
+
   // Coup reçu par le héros (lot 2)
   coupRecuMs: 300,            // héros sans contrôle
   coupRecuRecul: 90,          // distance de recul
