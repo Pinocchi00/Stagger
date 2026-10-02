@@ -25,7 +25,7 @@ Le jeu se joue dans le navigateur, téléphone tenu à l'horizontale. Il fonctio
 
 ## État des lots
 
-- [x] 0. Mise en place (reste à activer GitHub Pages, voir ci-dessous)
+- [x] 0. Mise en place
 - [ ] 1. La parade seule
 - [ ] 2. Les trois gestes
 - [ ] 3. La garde et les queues
@@ -54,7 +54,3 @@ Le jeu se joue dans le navigateur, téléphone tenu à l'horizontale. Il fonctio
 ## Technique
 
 HTML, JavaScript et Canvas 2D, sans moteur ni framework. Rien à installer. Mise en ligne sur GitHub Pages.
-
-## Activer GitHub Pages (une seule fois)
-
-Dépôt sur GitHub, Settings, Pages, Source « Deploy from a branch », branche `main`, dossier `/ (root)`, Save. Le lien est actif après une à deux minutes.
