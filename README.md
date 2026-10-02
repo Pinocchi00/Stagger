@@ -6,7 +6,7 @@ Le détail complet du jeu est dans [BRIEF.md](BRIEF.md). C'est la référence du
 
 ## Jouer
 
-Lien : [à compléter à la fin du lot 0]
+Lien : https://pinocchi00.github.io/Stagger/
 
 Le jeu se joue dans le navigateur, téléphone tenu à l'horizontale.
 
@@ -26,7 +26,7 @@ Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer, Ma
 
 ## État des lots
 
-- [ ] 0. Mise en place
+- [x] 0. Mise en place
 - [ ] 1. Le héros
 - [ ] 2. Le boss
 - [ ] 3. Phase 2 et réglage
