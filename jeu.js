@@ -7,7 +7,11 @@ const ctx = canvas.getContext('2d');
 // L'arène a une largeur fixe (S.arenaLargeur). La caméra suit le milieu du duel.
 let d = 1;                // pixels de l'appareil par pixel CSS
 let kui = 1;              // échelle de l'interface
-let plans = [];
+let decor = null;         // formes du décor, tirées une fois
+let cendres = [];         // cendres, ou braises en phase 2, dans l'image
+let braises = [];         // braises qui montent des flammes : { x, y, vx, vy, t0 }
+let souffles = [];        // buée du héros essoufflé : { x, y, vx, vy, t0 }
+let eclair = -1e9;        // instant du dernier éclair, en temps réel
 
 const boss = { x: 0, w: S.bossLargeur };
 const hero = {};
@@ -44,6 +48,7 @@ function ajuster() {
   canvas.width = Math.round(window.innerWidth * d);
   canvas.height = Math.round(window.innerHeight * d);
   kui = window.innerHeight / S.hauteurInterface;
+  genererCendres();
   if (hero.x !== undefined) { const c = cibleCamera(); cam.x = c.x; cam.z = c.z; }
 }
 
@@ -100,7 +105,7 @@ function recommencer() {
 }
 
 window.addEventListener('resize', ajuster);
-genererFond();
+genererDecor();
 recommencer();
 jeu.etat = 'depart';
 ajuster();
@@ -446,6 +451,7 @@ function majBoss(dt) {
     for (const m of boss.marques) {
       if (!m.applique && boss.t >= m.t0 + S.sortMarqueMs) {
         m.applique = true;
+        eclair = rt;
         jouer('explosion');
         if (chevauche(heroG(), heroD(), m.x - S.sortRayon, m.x + S.sortRayon)) heroTouche(S.sortDegats);
       }
@@ -470,59 +476,441 @@ function avancer(dt) {
 }
 
 // ---------- Dessin ----------
-// ---------- Fond ----------
-// Plusieurs plans sombres, dessinés par le code. Les plus lointains bougent le moins quand le héros marche.
-function genererFond() {
-  let graine = S.fond.graine;
-  const alea = () => { graine = (graine + 0x6D2B79F5) | 0; let t = Math.imul(graine ^ (graine >>> 15), 1 | graine); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-  const marge = S.fond.margeParallaxe;
-  plans = S.fond.plans.map(p => {
-    const formes = [];
-    for (let x = -marge; x < S.arenaLargeur + marge; ) {
-      const w = p.largeurMin + alea() * (p.largeurMax - p.largeurMin);
-      const h = p.hauteurMin + alea() * (p.hauteurMax - p.hauteurMin);
-      formes.push({ x, w, h, cassure: alea() });
-      x += w + alea() * p.espaceMax;
+// ---------- Décor ----------
+// Ruines d'un temple de veilleurs, la nuit : tout est dessiné par le code, plan par plan.
+
+function rng(graine) {
+  let g = graine;
+  return () => {
+    g = (g + 0x6D2B79F5) | 0;
+    let t = Math.imul(g ^ (g >>> 15), 1 | g);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function genererDecor() {
+  const D = S.decor, a = rng(D.graine);
+  const tire = (p) => p[0] + a() * (p[1] - p[0]);
+  const x0 = -D.marge, x1 = S.arenaLargeur + D.marge;
+  const rangee = (c) => {
+    const liste = [];
+    for (let x = x0; x < x1; ) {
+      const e = { x, w: tire(c.largeur), h: tire(c.hauteur), casse: a() < c.casseProba ? a() : -1, arc: a() < c.arcProba };
+      liste.push(e);
+      x += e.w + tire(c.ecart);
     }
-    return { ...p, formes };
+    return liste;
+  };
+  const P = D.pres, pres = [];
+  for (let x = x0; x < x1; ) {
+    const t = a();
+    if (t < P.statueProba) {
+      pres.push({ type: 'statue', x, w: P.statueTaille * 0.6 });
+      x += P.statueTaille * 0.6;
+    } else if (t < P.statueProba + P.tombeProba) {
+      const w = tire(P.tombeLargeur);
+      pres.push({ type: 'tombe', x, w, h: tire(P.tombeHauteur) });
+      x += w;
+    } else {
+      pres.push({ type: 'grille', x, w: P.grilleLargeur });
+      x += P.grilleLargeur;
+    }
+    x += tire(P.ecart);
+  }
+  const fissures = [];
+  for (let i = 0; i < D.sol.fissures; i++) {
+    const pts = [];
+    let px = x0 + a() * (x1 - x0), py = 8 + a() * 110;
+    for (let k = 0; k < 4; k++) { pts.push([px, py]); px += (a() - 0.5) * D.sol.fissureLongueur; py += a() * 14; }
+    fissures.push(pts);
+  }
+  decor = { lointain: rangee(D.ruine), colonnes: rangee(D.colonnes), pres, fissures };
+}
+
+function genererCendres() {
+  cendres = [];
+  for (let i = 0; i < S.decor.cendres.nombre; i++) {
+    cendres.push({ x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight, v: 0.5 + Math.random(), p: Math.random() * 6.28 });
+  }
+}
+
+// ---- Flammes et queues de Grimalkin ----
+function intensiteFlammes() {
+  const Q = S.queues;
+  let f = phase2() ? Q.phase2Facteur : 1;
+  if (boss.etat === 'vacille') f *= Q.vacilleFacteur;
+  if (jeu.etat === 'victoire') f *= Math.max(0, 1 - jeu.t / S.bossMortMs);
+  return f;
+}
+
+// Points de chaque queue, du dos du boss jusqu'à la flamme
+function geometrieQueues() {
+  const Q = S.queues, e = S.echelleSprite, t = rt / 1000;
+  const bx = boss.x - boss.dir * Q.baseDx * e, by = S.solY + Q.baseDy * e;
+  const queues = [];
+  for (let i = 0; i < Q.nombre; i++) {
+    const ang = Q.angles[i] * Math.PI / 180;
+    const vx = -boss.dir * Math.cos(ang), vy = -Math.sin(ang);
+    const L = Q.longueur * (1 + Q.longueurVariation * (((i * 7) % 5) / 2 - 1));
+    const pts = [];
+    for (let k = 0; k <= Q.segments; k++) {
+      const s = k / Q.segments;
+      const o = Math.sin(t * Math.PI * 2 * Q.ondulationHz - s * 3.2 + i * 1.7) * Q.ondulation * s;
+      pts.push([bx + vx * L * s - vy * o, by + vy * L * s + vx * o]);
+    }
+    queues.push(pts);
+  }
+  return queues;
+}
+
+function dessinerFlamme(x, y, taille, graine) {
+  const F = S.queues.flamme, t = rt / 1000;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const R = taille * F.halo;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, R);
+  g.addColorStop(0, `rgba(255,140,40,${F.haloAlpha})`);
+  g.addColorStop(1, 'rgba(255,100,20,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(x - R, y - R, R * 2, R * 2);
+  ctx.restore();
+  for (const [couleur, k] of [['#c8321a', 1], ['#ff8a1f', 0.72], ['#ffe08a', 0.42]]) {
+    const h = taille * k * (1 + 0.22 * Math.sin(t * Math.PI * 2 * F.scintillementHz + graine * 2.3 + k * 5));
+    const w = taille * F.largeur * k;
+    const sway = Math.sin(t * Math.PI * 2 * F.scintillementHz * 0.7 + graine) * taille * 0.16;
+    ctx.fillStyle = couleur;
+    ctx.beginPath();
+    ctx.moveTo(x - w, y);
+    ctx.quadraticCurveTo(x - w, y - h * 0.55, x + sway, y - h);
+    ctx.quadraticCurveTo(x + w, y - h * 0.5, x + w, y);
+    ctx.quadraticCurveTo(x, y + w * 0.7, x - w, y);
+    ctx.fill();
+  }
+}
+
+function dessinerQueues() {
+  const Q = S.queues, f = intensiteFlammes();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  geometrieQueues().forEach((pts, i) => {
+    for (let k = 1; k < pts.length; k++) {
+      const s = k / (pts.length - 1);
+      ctx.strokeStyle = s > 0.7 ? Q.couleurPointe : Q.couleur;
+      ctx.lineWidth = Q.epaisseur * (1 - 0.65 * s);
+      ctx.beginPath();
+      ctx.moveTo(pts[k - 1][0], pts[k - 1][1]);
+      ctx.lineTo(pts[k][0], pts[k][1]);
+      ctx.stroke();
+    }
+    const bout = pts[pts.length - 1];
+    if (f > 0.02) dessinerFlamme(bout[0], bout[1], Q.flamme.taille * f, i);
   });
 }
 
-// Ciel en coordonnées d'écran, puis plans et sol dans le monde
-function dessinerCiel() {
-  const g = ctx.createLinearGradient(0, 0, 0, window.innerHeight * S.solEcranRatio);
-  g.addColorStop(0, S.fond.cielHaut);
-  g.addColorStop(1, S.fond.cielBas);
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
-}
+// ---- Particules, mises à jour à chaque image ----
+function majEffets(dt) {
+  const Q = S.queues, G = S.signaux, c = S.decor.cendres, b = S.decor.braises;
+  const vent = phase2() ? b.vxFacteur : 1, chute = phase2() ? b.vyFacteur : 1;
+  const W = window.innerWidth, H = window.innerHeight;
+  for (const p of cendres) {
+    p.x += (c.vx * vent * p.v + Math.sin(rt / 900 + p.p) * c.vent) * dt / 1000 * kui;
+    p.y += c.vy * chute * p.v * dt / 1000 * kui;
+    if (p.x > W) p.x -= W;
+    if (p.x < 0) p.x += W;
+    if (p.y > H) { p.y -= H; p.x = Math.random() * W; }
+  }
 
-function dessinerPlans(cx) {
-  const decalage = cx - S.arenaLargeur / 2;
-  for (const p of plans) {
-    ctx.fillStyle = p.couleur;
-    const dx = -decalage * p.parallaxe;
-    for (const f of p.formes) {
-      const x = f.x + dx, base = S.solY;
-      ctx.beginPath();
-      if (p.type === 'pics') {
-        ctx.moveTo(x, base);
-        ctx.lineTo(x + f.w * f.cassure, base - f.h);
-        ctx.lineTo(x + f.w, base);
-      } else {
-        // colonne dont le sommet est brisé
-        ctx.moveTo(x, base);
-        ctx.lineTo(x, base - f.h);
-        ctx.lineTo(x + f.w * f.cassure, base - f.h * (1 - p.cassureRatio));
-        ctx.lineTo(x + f.w, base - f.h);
-        ctx.lineTo(x + f.w, base);
+  const f = intensiteFlammes();
+  if (jeu.etat !== 'depart' && f > 0.05) {
+    for (const pts of geometrieQueues()) {
+      if (Math.random() < Q.braisesParSeconde * f * dt / 1000 && braises.length < Q.braisesMax) {
+        const bout = pts[pts.length - 1];
+        braises.push({ x: bout[0], y: bout[1], vx: (Math.random() - 0.5) * Q.braiseVitesse, vy: -Q.braiseVitesse * (0.5 + Math.random()), t0: rt });
       }
-      ctx.closePath();
-      ctx.fill();
     }
   }
-  ctx.fillStyle = S.fond.sol;
-  ctx.fillRect(-S.fond.margeParallaxe, S.solY, S.arenaLargeur + 2 * S.fond.margeParallaxe, S.hauteurInterface * 4);
+  braises = braises.filter(p => rt - p.t0 < Q.braiseVie);
+  for (const p of braises) { p.x += p.vx * dt / 1000; p.y += p.vy * dt / 1000; }
+
+  // Le héros à bout de souffle laisse échapper de la buée
+  const reste = hero.endurance / S.enduranceMax;
+  if (jeu.etat === 'combat' && reste < G.enduranceSeuil) {
+    const taux = (1 - reste / G.enduranceSeuil) * G.souffleMaxParSeconde;
+    if (Math.random() < taux * dt / 1000 && souffles.length < G.soufflesMax) {
+      souffles.push({ x: hero.x + hero.dir * 8, y: S.solY - S.heroHauteur * 0.9, vx: hero.dir * (8 + Math.random() * 10), vy: -G.souffleMontee * (0.5 + Math.random()), t0: rt });
+    }
+  }
+  souffles = souffles.filter(p => rt - p.t0 < G.souffleVie);
+  for (const p of souffles) { p.x += p.vx * dt / 1000; p.y += p.vy * dt / 1000; }
+}
+
+// ---- Dessin du décor ----
+function dessinerCiel() {
+  const W = window.innerWidth, H = window.innerHeight, C = S.decor.ciel;
+  const g = ctx.createLinearGradient(0, 0, 0, H * S.solEcranRatio);
+  g.addColorStop(0, C.haut);
+  g.addColorStop(1, C.bas);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  const mx = W * C.lune.x, my = H * C.lune.y, R = C.lune.halo * kui;
+  const h = ctx.createRadialGradient(mx, my, 0, mx, my, R);
+  h.addColorStop(0, `rgba(217,212,230,${C.lune.haloAlpha})`);
+  h.addColorStop(1, 'rgba(217,212,230,0)');
+  ctx.fillStyle = h;
+  ctx.fillRect(mx - R, my - R, R * 2, R * 2);
+  ctx.fillStyle = C.lune.couleur;
+  ctx.beginPath();
+  ctx.arc(mx, my, C.lune.rayon * kui, 0, Math.PI * 2);
+  ctx.fill();
+  for (const n of C.nuages) {   // nuages sombres qui voilent la lune
+    ctx.fillStyle = `rgba(14,12,20,${n.alpha})`;
+    ctx.beginPath();
+    ctx.ellipse(W * n.x, H * n.y, n.largeur * kui / 2, n.hauteur * kui / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function dessinerRangee(liste, c) {
+  ctx.fillStyle = c.couleur;
+  ctx.strokeStyle = c.couleur;
+  ctx.lineWidth = c.arcEpaisseur;
+  const base = S.solY;
+  for (let i = 0; i < liste.length; i++) {
+    const e = liste[i], haut = base - e.h;
+    ctx.beginPath();
+    ctx.moveTo(e.x, base);
+    if (e.casse >= 0) {   // sommet brisé
+      ctx.lineTo(e.x, haut + e.h * 0.12 * e.casse);
+      ctx.lineTo(e.x + e.w * 0.35, haut + e.h * 0.05);
+      ctx.lineTo(e.x + e.w * 0.6, haut + e.h * (0.1 + 0.1 * e.casse));
+      ctx.lineTo(e.x + e.w, haut);
+    } else {
+      ctx.lineTo(e.x, haut);
+      ctx.lineTo(e.x + e.w, haut);
+    }
+    ctx.lineTo(e.x + e.w, base);
+    ctx.closePath();
+    ctx.fill();
+    if (e.casse < 0) ctx.fillRect(e.x - 5, haut - 8, e.w + 10, 8);   // chapiteau
+    const n = liste[i + 1];
+    if (e.arc && n && e.casse < 0 && n.casse < 0) {
+      const ya = Math.min(haut, base - n.h) + 6, xa = e.x + e.w;
+      ctx.beginPath();
+      ctx.moveTo(xa, ya);
+      ctx.quadraticCurveTo((xa + n.x) / 2, ya - (n.x - xa) * 0.35, n.x, ya);
+      ctx.stroke();
+    }
+  }
+}
+
+function dessinerPres() {
+  const P = S.decor.pres, base = S.solY + 4;
+  ctx.fillStyle = P.couleur;
+  ctx.strokeStyle = P.couleur;
+  for (const e of decor.pres) {
+    if (e.type === 'tombe') {
+      ctx.beginPath();
+      ctx.moveTo(e.x, base);
+      ctx.lineTo(e.x, base - e.h + e.w / 2);
+      ctx.arc(e.x + e.w / 2, base - e.h + e.w / 2, e.w / 2, Math.PI, 0);
+      ctx.lineTo(e.x + e.w, base);
+      ctx.closePath();
+      ctx.fill();
+    } else if (e.type === 'grille') {
+      const n = P.grilleBarres, gh = P.grilleHauteur, pas = e.w / (n - 1);
+      for (let i = 0; i < n; i++) {
+        const x = e.x + i * pas;
+        ctx.fillRect(x - 1.5, base - gh, 3, gh);
+        ctx.beginPath();
+        ctx.moveTo(x - 3.5, base - gh);
+        ctx.lineTo(x, base - gh - 10);
+        ctx.lineTo(x + 3.5, base - gh);
+        ctx.fill();
+      }
+      ctx.fillRect(e.x, base - gh * 0.75, e.w, 3);
+      ctx.fillRect(e.x, base - gh * 0.25, e.w, 3);
+    } else {   // statue de chat assis
+      const s = P.statueTaille, cx = e.x + e.w / 2;
+      ctx.fillRect(cx - s * 0.32, base - s * 0.12, s * 0.64, s * 0.12);
+      ctx.beginPath();
+      ctx.ellipse(cx, base - s * 0.38, s * 0.2, s * 0.28, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx, base - s * 0.74, s * 0.15, 0, Math.PI * 2);
+      ctx.fill();
+      for (const sg of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + sg * s * 0.16, base - s * 0.78);
+        ctx.lineTo(cx + sg * s * 0.13, base - s * 0.95);
+        ctx.lineTo(cx + sg * s * 0.03, base - s * 0.86);
+        ctx.fill();
+      }
+      ctx.lineWidth = s * 0.08;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx + s * 0.18, base - s * 0.18);
+      ctx.quadraticCurveTo(cx + s * 0.42, base - s * 0.12, cx + s * 0.34, base - s * 0.34);
+      ctx.stroke();
+    }
+  }
+}
+
+function dessinerSol() {
+  const D = S.decor, G = D.sol, x0 = -D.marge, w = S.arenaLargeur + 2 * D.marge, prof = S.hauteurInterface * 4;
+  ctx.fillStyle = G.couleur;
+  ctx.fillRect(x0, S.solY, w, prof);
+  ctx.strokeStyle = G.jointCouleur;
+  ctx.lineWidth = 2;
+  const lim = [0, ...G.joints, G.joints[G.joints.length - 1] + 200];
+  for (let b = 0; b < lim.length - 1; b++) {
+    if (b > 0) {
+      ctx.beginPath();
+      ctx.moveTo(x0, S.solY + lim[b]);
+      ctx.lineTo(x0 + w, S.solY + lim[b]);
+      ctx.stroke();
+    }
+    const pas = G.jointEcart * (1 + G.jointEvase * b);
+    for (let x = x0 + (b % 2 ? pas / 2 : 0); x < x0 + w; x += pas) {
+      ctx.beginPath();
+      ctx.moveTo(x, S.solY + lim[b]);
+      ctx.lineTo(x, S.solY + lim[b + 1]);
+      ctx.stroke();
+    }
+  }
+  ctx.lineWidth = 1.5;
+  for (const pts of decor.fissures) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], S.solY + pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], S.solY + pts[i][1]);
+    ctx.stroke();
+  }
+  // Le sol est plus clair autour des personnages, la lumière vient des flammes
+  const L = G.lumiere, lx = (hero.x + boss.x) / 2;
+  ctx.save();
+  ctx.translate(lx, S.solY + 24);
+  ctx.scale(1, L.aplat);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, L.rayon);
+  g.addColorStop(0, `rgba(${L.couleur},${L.alpha * (0.4 + 0.6 * intensiteFlammes())})`);
+  g.addColorStop(1, `rgba(${L.couleur},0)`);
+  ctx.fillStyle = g;
+  ctx.fillRect(-L.rayon, -L.rayon, L.rayon * 2, L.rayon * 2);
+  ctx.restore();
+}
+
+function dessinerBrume(devant) {
+  const D = S.decor, x0 = -D.marge, x1 = S.arenaLargeur + D.marge;
+  for (const n of D.brume) {
+    if (n.devant !== devant) continue;
+    const periode = n.largeur * 0.8;
+    const decalage = (((rt / 1000 * n.vitesse) % periode) + periode) % periode;
+    for (let x = x0 - n.largeur + decalage; x < x1 + n.largeur; x += periode) {
+      ctx.save();
+      ctx.translate(x, S.solY + n.y);
+      ctx.scale(1, n.hauteur / n.largeur);
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, n.largeur / 2);
+      g.addColorStop(0, `rgba(${D.brumeCouleur},${n.alpha})`);
+      g.addColorStop(1, `rgba(${D.brumeCouleur},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(-n.largeur / 2, -n.largeur / 2, n.largeur, n.largeur);
+      ctx.restore();
+    }
+  }
+}
+
+// Silhouettes très sombres au premier plan, devant les personnages, aux deux bouts de l'arène
+function dessinerPremierPlan(cx) {
+  const F = S.decor.premierPlan, off = -(cx - S.arenaLargeur / 2) * F.parallaxe;
+  const haut = S.solY - S.hauteurInterface * 2, bas = S.solY + S.hauteurInterface * 2;
+  ctx.globalAlpha = F.alpha;
+  for (const cote of [-1, 1]) {
+    const bord = cote < 0 ? F.x + off : S.arenaLargeur - F.x + off;       // bord intérieur du pilier
+    const dehors = bord - cote * F.largeur;
+    ctx.fillStyle = F.couleur;
+    ctx.fillRect(Math.min(bord, dehors) - (cote < 0 ? 400 : 0), haut, F.largeur + 400, bas - haut);
+    const g = ctx.createLinearGradient(bord, 0, bord + cote * F.fondu, 0);
+    g.addColorStop(0, F.couleur);
+    g.addColorStop(1, 'rgba(2,2,4,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(Math.min(bord, bord + cote * F.fondu), haut, F.fondu, bas - haut);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function dessinerHalo() {
+  const H = S.decor.halo, f = intensiteFlammes();
+  if (f < 0.02) return;
+  const y = S.solY - H.hauteur;
+  const g = ctx.createRadialGradient(boss.x, y, 0, boss.x, y, H.rayon);
+  g.addColorStop(0, `rgba(255,120,40,${H.alpha * f})`);
+  g.addColorStop(1, 'rgba(255,100,20,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(boss.x - H.rayon, y - H.rayon, H.rayon * 2, H.rayon * 2);
+}
+
+function dessinerHaloHeros() {
+  const H = S.decor.haloHeros, y = S.solY - H.hauteur;
+  const g = ctx.createRadialGradient(hero.x, y, 0, hero.x, y, H.rayon);
+  g.addColorStop(0, `rgba(${H.couleur},${H.alpha})`);
+  g.addColorStop(1, `rgba(${H.couleur},0)`);
+  ctx.fillStyle = g;
+  ctx.fillRect(hero.x - H.rayon, y - H.rayon, H.rayon * 2, H.rayon * 2);
+}
+
+function dessinerParticulesMonde() {
+  const Q = S.queues, G = S.signaux;
+  for (const p of braises) {
+    const a = 1 - (rt - p.t0) / Q.braiseVie;
+    ctx.fillStyle = `rgba(255,${Math.round(120 + 100 * a)},50,${a})`;
+    ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+  }
+  for (const p of souffles) {
+    const a = (rt - p.t0) / G.souffleVie;
+    ctx.fillStyle = `rgba(230,235,245,${0.38 * (1 - a)})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, G.souffleTaille * (1 + a * 1.6), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function velours(couleur, alpha, depart) {
+  const W = window.innerWidth, H = window.innerHeight;
+  const R = Math.hypot(W, H) / 2;
+  const g = ctx.createRadialGradient(W / 2, H / 2, R * depart, W / 2, H / 2, R);
+  g.addColorStop(0, `rgba(${couleur},0)`);
+  g.addColorStop(1, `rgba(${couleur},${alpha})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// Couches posées sur toute l'image : cendres, teinte de la phase 2, éclair, bords sombres et rouges
+function dessinerAtmosphere() {
+  const W = window.innerWidth, H = window.innerHeight, c = S.decor.cendres, G = S.signaux;
+  const ember = phase2();
+  ctx.fillStyle = ember ? S.decor.braises.couleur : c.couleur;
+  for (const p of cendres) {
+    ctx.globalAlpha = c.alpha * (ember ? 0.7 + 0.3 * Math.sin(rt / 200 + p.p) : 1) * Math.min(1, p.v);
+    const t = c.taille * kui * p.v;
+    ctx.fillRect(p.x, p.y, t, t);
+  }
+  ctx.globalAlpha = 1;
+
+  if (ember) {
+    ctx.fillStyle = `rgba(150,15,0,${S.decor.phase2.rougeAlpha})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  const E = S.decor.eclair, ea = (rt - eclair) / E.ms;
+  if (ea >= 0 && ea < 1) {
+    ctx.fillStyle = `rgba(${E.couleur},${E.alpha * (1 - ea)})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  velours('0,0,0', S.decor.vignette.alpha, S.decor.vignette.depart);
+
+  // La vie du héros se lit sur le bord de l'écran : de plus en plus rouge, puis qui pulse
+  const vie = hero.vie / S.vie;
+  let rouge = Math.pow(1 - vie, 1.5) * G.vignetteRougeMax;
+  if (vie < G.vieSeuilPouls && jeu.etat === 'combat') rouge *= 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(rt / 1000 * Math.PI * 2 * G.poulsHz));
+  if (rouge > 0.01) velours('150,0,12', rouge, 0.2);
 }
 
 function barre(x, y, largeur, part, couleur) {
@@ -635,7 +1023,7 @@ function dessinerArc() {
   const rayon = S.fauchagePortee + boss.w / 2;
   ctx.save();
   ctx.beginPath();
-  ctx.rect(-S.fond.margeParallaxe, -S.hauteurInterface * 4, S.arenaLargeur + 2 * S.fond.margeParallaxe, S.hauteurInterface * 4 + S.solY);
+  ctx.rect(-S.decor.marge, -S.hauteurInterface * 4, S.arenaLargeur + 2 * S.decor.marge, S.hauteurInterface * 4 + S.solY);
   ctx.clip();
   ctx.strokeStyle = S.arcCouleur;
   ctx.lineCap = 'round';
@@ -725,7 +1113,13 @@ function dessiner() {
     ctx.translate((Math.random() * 2 - 1) * a, (Math.random() * 2 - 1) * a);
   }
   ctx.imageSmoothingEnabled = false;
-  dessinerPlans(cx);
+  const decale = (p, f) => { ctx.save(); ctx.translate(-(cx - S.arenaLargeur / 2) * p, 0); f(); ctx.restore(); };
+  decale(S.decor.ruine.parallaxe, () => dessinerRangee(decor.lointain, S.decor.ruine));
+  decale(S.decor.colonnes.parallaxe, () => dessinerRangee(decor.colonnes, S.decor.colonnes));
+  dessinerSol();
+  decale(S.decor.pres.parallaxe, dessinerPres);
+  dessinerBrume(false);
+  dessinerHalo();
 
   for (const m of boss.marques) {
     dessinerRunes(m);
@@ -735,23 +1129,36 @@ function dessiner() {
     dessinerSprite(im, f, m.x, false, S.bossSprite, S.sortPivotX);
   }
 
+  dessinerQueues();
   const [nomB, fb] = frameBoss();
   dessinerSprite(images[nomB], fb, boss.x, boss.dir > 0, S.bossSprite);
   dessinerLueur();
   dessinerArc();
 
-  ctx.globalAlpha = invulnerable() ? S.rouladeAlpha : 1;
+  dessinerHaloHeros();
+
+  // Le héros à bout d'endurance s'efface et vacille
+  const epuise = hero.endurance <= 0 && jeu.etat === 'combat';
+  ctx.globalAlpha = invulnerable() ? S.rouladeAlpha : epuise ? S.signaux.epuiseAlpha : 1;
   const [nomH, fh] = frameHero();
+  ctx.save();
+  if (epuise) ctx.translate(Math.sin(rt / 1000 * Math.PI * 2 * S.signaux.epuiseHz) * S.signaux.epuiseBalancement, 0);
   dessinerSprite(images[nomH], fh, hero.x, hero.etat === 'roulade' ? hero.rouladeDir < 0 : hero.dir < 0, S.heroSprite);
+  ctx.restore();
   ctx.globalAlpha = 1;
+
+  dessinerParticulesMonde();
+  dessinerBrume(true);
+  dessinerPremierPlan(cx);
   ctx.restore();
 
-  // Interface, en unités de référence
+  // Couches posées sur l'image, en pixels de l'écran
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  dessinerAtmosphere();
+
+  // Interface : seule la vie du boss est affichée, la vie et l'endurance du héros se lisent dans l'image
   ctx.setTransform(d * kui, 0, 0, d * kui, 0, 0);
   const wi = W / kui, hi = H / kui;
-  barre(S.barreMarge, S.barreMarge, S.barreLargeur, hero.vie / S.vie, '#a33');
-  barre(S.barreMarge, S.barreMarge + S.barreHauteur + S.barreEspace, S.barreLargeur, hero.endurance / S.enduranceMax, '#4a8');
-
   const bx = (wi - S.bossBarreLargeur) / 2;
   const by = hi - S.bossBarreBas;
   ctx.fillStyle = '#bbb';
@@ -787,6 +1194,7 @@ function boucle(now) {
     rt += dt;
     avancer(dt);
     majCamera(dt);
+    majEffets(dt);
   }
   dessiner();
 }

@@ -38,7 +38,7 @@ const SETTINGS = {
   enchainementMs: 300,        // temps après une attaque pour enchaîner la deuxième
 
   // Boss (lot 2)
-  bossNom: 'Le Boss',         // son nom reste à choisir
+  bossNom: 'Grimalkin',
   bossVie: 400,
   bossLargeur: 60,
   bossDepartEcart: 500,       // distance entre le héros et le boss au départ
@@ -109,9 +109,7 @@ const SETTINGS = {
   glisserMinPx: 40,           // glissement minimal du pouce droit pour rouler
 
   // Affichage (lot 1)
-  barreLargeur: 220,
   barreHauteur: 28,           // deux fois plus hautes (lot 6)
-  barreMarge: 16,
   barreEspace: 8,
   bossBarreLargeur: 520,
   bossBarreBas: 64,           // distance entre la barre du boss et le bas de l'écran
@@ -137,8 +135,8 @@ const SETTINGS = {
   arcSegments: 14,
 
   // Cercle de runes du Sort (lot 6)
-  runesCouleur: '#a070e0',
-  runesCouleurVive: '#e0ccff',
+  runesCouleur: '#e07a2a',
+  runesCouleurVive: '#ffd9a0',
   runesAplat: 0.28,           // hauteur du cercle, en part de sa largeur
   runesNombre: 12,
   runesTaille: 14,            // taille d'une rune
@@ -147,18 +145,92 @@ const SETTINGS = {
   runesPulseAccel: 4,         // pulsations ajoutées par seconde à l'approche de l'explosion
   runesEpaisseur: 3,
 
-  // Fond (lot 5) : plans sombres du plus lointain au plus proche
-  fond: {
-    graine: 7,
-    margeParallaxe: 200,
-    cielHaut: '#07070a',
-    cielBas: '#16141a',
-    sol: '#1b1b21',
-    plans: [
-      { type: 'pics', parallaxe: 0.02, couleur: '#121218', largeurMin: 180, largeurMax: 380, hauteurMin: 160, hauteurMax: 340, espaceMax: 60 },
-      { type: 'colonnes', parallaxe: 0.05, couleur: '#0e0e13', largeurMin: 40, largeurMax: 90, hauteurMin: 120, hauteurMax: 300, espaceMax: 220, cassureRatio: 0.18 },
-      { type: 'colonnes', parallaxe: 0.1, couleur: '#08080b', largeurMin: 60, largeurMax: 120, hauteurMin: 200, hauteurMax: 420, espaceMax: 480, cassureRatio: 0.12 },
+  // Décor : ruines d'un temple de veilleurs, la nuit. Plans du plus lointain au plus proche.
+  decor: {
+    graine: 11,
+    marge: 260,               // débord de chaque côté de l'arène
+    ciel: {
+      haut: '#05050a', bas: '#1b1521',
+      lune: { x: 0.74, y: 0.2, rayon: 30, couleur: '#d9d4e6', halo: 170, haloAlpha: 0.32 }, // x, y : part de l'écran
+      nuages: [
+        { x: 0.6, y: 0.19, largeur: 300, hauteur: 26, alpha: 0.55 },
+        { x: 0.82, y: 0.25, largeur: 220, hauteur: 20, alpha: 0.45 },
+      ],
+    },
+    ruine: {                  // la ruine immense, au loin
+      parallaxe: 0.03, couleur: '#19151f',
+      ecart: [90, 150], largeur: [26, 42], hauteur: [190, 270], casseProba: 0.45, arcProba: 0.65, arcEpaisseur: 15,
+    },
+    colonnes: {               // colonnes et arches brisées
+      parallaxe: 0.07, couleur: '#110f16',
+      ecart: [150, 300], largeur: [34, 54], hauteur: [130, 210], casseProba: 0.7, arcProba: 0.4, arcEpaisseur: 12,
+    },
+    pres: {                   // tombes, grilles et statues de chats, près du sol
+      parallaxe: 0.14, couleur: '#0a090e',
+      ecart: [30, 110], tombeProba: 0.5, statueProba: 0.18,
+      tombeLargeur: [22, 34], tombeHauteur: [30, 58],
+      statueTaille: 62, grilleLargeur: 96, grilleHauteur: 50, grilleBarres: 8,
+    },
+    sol: {
+      couleur: '#1c1a21', jointCouleur: '#0f0e13',
+      joints: [14, 36, 70, 125], // profondeur des joints horizontaux, sous la ligne du sol
+      jointEcart: 70,           // écart des joints verticaux à la ligne du sol
+      jointEvase: 0.7,          // élargissement avec la profondeur
+      fissures: 16, fissureLongueur: 46,
+      lumiere: { rayon: 360, alpha: 0.2, couleur: '255,140,60', aplat: 0.26 },
+    },
+    brume: [
+      { vitesse: 7, hauteur: 70, largeur: 560, y: -8, alpha: 0.11, devant: false },
+      { vitesse: -13, hauteur: 46, largeur: 430, y: 16, alpha: 0.08, devant: true },
     ],
+    brumeCouleur: '150,140,165',
+    cendres: { nombre: 70, vx: 18, vy: 24, vent: 8, taille: 1.8, alpha: 0.55, couleur: '#c2bacb' },
+    braises: { vxFacteur: 2.2, vyFacteur: 1.3, couleur: '#ff8a2a' }, // la phase 2 transforme les cendres en braises
+    premierPlan: { parallaxe: -0.22, couleur: '#020204', alpha: 0.93, largeur: 80, fondu: 130, x: 30 },
+    vignette: { alpha: 0.62, depart: 0.38 },     // départ : part du rayon où l'assombrissement commence
+    halo: { rayon: 230, alpha: 0.3, hauteur: 80 }, // derrière le boss
+    haloHeros: { rayon: 90, alpha: 0.14, hauteur: 40, couleur: '225,215,195' }, // lueur pâle qui détache le héros du décor
+    eclair: { ms: 150, alpha: 0.5, couleur: '255,235,220' }, // à l'explosion d'un Sort
+    phase2: { rougeAlpha: 0.09 },
+  },
+
+  // Les cinq queues de Grimalkin (flammes au bout de chacune)
+  queues: {
+    nombre: 5,
+    baseDx: 9,                // départ de la queue derrière le dos, en pixels de sprite
+    baseDy: -29,              // hauteur du départ au-dessus du sol, en pixels de sprite
+    angles: [28, 56, 84, 112, 138], // degrés au-dessus de l'horizontale arrière
+    longueur: 104,            // unités
+    longueurVariation: 0.16,  // écart de longueur d'une queue à l'autre
+    epaisseur: 9,
+    ondulation: 17,
+    ondulationHz: 1.7,
+    couleur: '#322c30',
+    couleurPointe: '#6a2f16',
+    segments: 14,
+    flamme: { taille: 25, largeur: 0.5, scintillementHz: 9, halo: 2.4, haloAlpha: 0.38 },
+    phase2Facteur: 1.4,       // flammes plus grandes en phase 2
+    vacilleFacteur: 0.55,     // et plus faibles quand il vacille
+    braisesParSeconde: 5,     // par queue
+    braiseVie: 900,           // ms
+    braiseVitesse: 40,
+    braisesMax: 90,
+  },
+
+  // Vie et endurance du héros, rendues par l'image plutôt que par des barres
+  signaux: {
+    vieSeuilPouls: 0.4,       // sous cette part de vie, le bord de l'écran pulse
+    vignetteRougeMax: 0.62,
+    poulsHz: 1.3,
+    enduranceSeuil: 0.5,      // sous cette part d'endurance, le héros s'essouffle
+    souffleMaxParSeconde: 7,
+    souffleVie: 700,          // ms
+    souffleTaille: 5,
+    souffleMontee: 22,
+    epuiseAlpha: 0.72,        // opacité du héros à bout de souffle
+    epuiseBalancement: 1.6,   // amplitude de son balancement, en unités
+    epuiseHz: 3.2,
+    soufflesMax: 40,
   },
 
   // Impacts (lot 5)
