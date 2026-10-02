@@ -11,6 +11,7 @@ let decor = null;         // formes du décor, tirées une fois
 let cendres = [];         // cendres, ou braises en phase 2, dans l'image
 let braises = [];         // braises qui montent des flammes : { x, y, vx, vy, t0 }
 let souffles = [];        // buée du héros essoufflé : { x, y, vx, vy, t0 }
+let fumees = [];          // fumée noire au-dessus des flammes : { x, y, vx, vy, t0 }
 let eclair = -1e9;        // instant du dernier éclair, en temps réel
 
 const boss = { x: 0, w: S.bossLargeur };
@@ -305,6 +306,20 @@ function relancer() {
   if (jeu.etat === 'victoire' && jeu.t >= S.victoireAttenteMs) recommencer();
 }
 
+// Plein écran et écran à l'horizontale, demandés au premier geste : les navigateurs l'exigent.
+// (Sur iPhone, le navigateur ne le permet pas : il faut ajouter le jeu à l'écran d'accueil.)
+let essaisPleinEcran = 0;
+function pleinEcran() {
+  if (essaisPleinEcran >= 2 || document.fullscreenElement || document.webkitFullscreenElement) return;
+  const el = document.documentElement;
+  const demande = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!demande) return;
+  essaisPleinEcran++;
+  Promise.resolve(demande.call(el))
+    .then(() => (screen.orientation && screen.orientation.lock ? screen.orientation.lock('landscape') : null))
+    .catch(() => {});
+}
+
 function demarrer() {
   if (jeu.etat !== 'depart' || portrait()) return false;
   jeu.etat = 'combat';
@@ -338,12 +353,13 @@ function relacher(e) {
   // Un toucher bref et immobile à gauche est une parade
   if (p && e.type === 'pointerup' && p.cote === 'gauche' && p.depl < S.zoneMortePx && e.timeStamp - p.t0 <= S.paradeToucherMaxMs) parer();
 }
-window.addEventListener('pointerup', e => { relancer(); relacher(e); });
+window.addEventListener('pointerup', e => { pleinEcran(); relancer(); relacher(e); });
 window.addEventListener('pointercancel', relacher);
 
 window.addEventListener('keydown', e => {
   if (['ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyX'].includes(e.code)) e.preventDefault();
   initAudio();
+  pleinEcran();
   if (e.repeat) return;
   clavier.add(e.code);
   if (demarrer()) return;
@@ -638,29 +654,37 @@ function geometrieQueues() {
   return queues;
 }
 
+// Flamme sombre et déchiquetée : plusieurs langues qui se tordent, du rouge noir à l'or pâle
 function dessinerFlamme(x, y, taille, graine) {
   const F = S.queues.flamme, t = rt / 1000;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const R = taille * F.halo;
   const g = ctx.createRadialGradient(x, y, 0, x, y, R);
-  g.addColorStop(0, `rgba(255,140,40,${F.haloAlpha})`);
-  g.addColorStop(1, 'rgba(255,100,20,0)');
+  g.addColorStop(0, `rgba(${F.haloCouleur},${F.haloAlpha})`);
+  g.addColorStop(1, `rgba(${F.haloCouleur},0)`);
   ctx.fillStyle = g;
   ctx.fillRect(x - R, y - R, R * 2, R * 2);
   ctx.restore();
-  for (const [couleur, k] of [['#c8321a', 1], ['#ff8a1f', 0.72], ['#ffe08a', 0.42]]) {
-    const h = taille * k * (1 + 0.22 * Math.sin(t * Math.PI * 2 * F.scintillementHz + graine * 2.3 + k * 5));
-    const w = taille * F.largeur * k;
-    const sway = Math.sin(t * Math.PI * 2 * F.scintillementHz * 0.7 + graine) * taille * 0.16;
+  F.couches.forEach((couleur, c) => {
+    const echelle = 1 - c * 0.24;
     ctx.fillStyle = couleur;
-    ctx.beginPath();
-    ctx.moveTo(x - w, y);
-    ctx.quadraticCurveTo(x - w, y - h * 0.55, x + sway, y - h);
-    ctx.quadraticCurveTo(x + w, y - h * 0.5, x + w, y);
-    ctx.quadraticCurveTo(x, y + w * 0.7, x - w, y);
-    ctx.fill();
-  }
+    for (let i = 0; i < F.langues; i++) {
+      const u = i / (F.langues - 1) - 0.5;                   // -0.5 à 0.5 : position de la langue
+      const graineI = graine * 3.1 + i * 1.9 + c * 0.7;
+      const tremble = Math.sin(t * Math.PI * 2 * F.scintillementHz + graineI);
+      const h = taille * echelle * (1.15 - Math.abs(u) * 0.9) * (1 + 0.28 * tremble);
+      const cx = x + u * taille * 0.9 * echelle + Math.sin(t * 7 + graineI) * taille * 0.1;
+      const pointe = cx + Math.sin(t * Math.PI * 2 * F.scintillementHz * 0.6 + graineI) * taille * 0.3 + u * taille * 0.5;
+      const w = taille * F.largeur * echelle;
+      ctx.beginPath();
+      ctx.moveTo(cx - w, y);
+      ctx.quadraticCurveTo(cx - w * 0.9, y - h * 0.5, pointe, y - h);
+      ctx.quadraticCurveTo(cx + w * 0.8, y - h * 0.45, cx + w, y);
+      ctx.quadraticCurveTo(cx, y + w * 0.5, cx - w, y);
+      ctx.fill();
+    }
+  });
 }
 
 function dessinerQueues() {
@@ -668,16 +692,38 @@ function dessinerQueues() {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   geometrieQueues().forEach((pts, i) => {
-    for (let k = 1; k < pts.length; k++) {
-      const s = k / (pts.length - 1);
-      ctx.strokeStyle = s > 0.7 ? Q.couleurPointe : Q.couleur;
-      ctx.lineWidth = Q.epaisseur * (1 - 0.65 * s);
+    const n = pts.length - 1;
+    // échine carbonisée
+    for (let k = 1; k <= n; k++) {
+      const s = k / n;
+      ctx.strokeStyle = Q.couleur;
+      ctx.lineWidth = Q.epaisseur * (1 - 0.62 * s);
       ctx.beginPath();
       ctx.moveTo(pts[k - 1][0], pts[k - 1][1]);
       ctx.lineTo(pts[k][0], pts[k][1]);
       ctx.stroke();
     }
-    const bout = pts[pts.length - 1];
+    // vertèbres, de plus en plus fines
+    for (let k = 1; k < n; k++) {
+      const s = k / n;
+      const dx = pts[k + 1][0] - pts[k - 1][0], dy = pts[k + 1][1] - pts[k - 1][1];
+      ctx.fillStyle = Q.os;
+      ctx.strokeStyle = Q.osContour;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(pts[k][0], pts[k][1], Q.vertebre * (1 - 0.55 * s), Q.vertebre * (1 - 0.55 * s) * 0.6, Math.atan2(dy, dx), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    // la braise court dans l'échine, vers la flamme
+    ctx.strokeStyle = `rgba(${Q.braiseFissure},${0.75 * f})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const debut = Math.floor(n * Q.braiseFissureDebut);
+    ctx.moveTo(pts[debut][0], pts[debut][1]);
+    for (let k = debut + 1; k <= n; k++) ctx.lineTo(pts[k][0], pts[k][1]);
+    ctx.stroke();
+    const bout = pts[n];
     if (f > 0.02) dessinerFlamme(bout[0], bout[1], Q.flamme.taille * f, i);
   });
 }
@@ -702,9 +748,15 @@ function majEffets(dt) {
         const bout = pts[pts.length - 1];
         braises.push({ x: bout[0], y: bout[1], vx: (Math.random() - 0.5) * Q.braiseVitesse, vy: -Q.braiseVitesse * (0.5 + Math.random()), t0: rt });
       }
+      if (Math.random() < Q.fumeeParSeconde * f * dt / 1000 && fumees.length < Q.fumeeMax) {
+        const bout = pts[pts.length - 1];
+        fumees.push({ x: bout[0], y: bout[1] - Q.flamme.taille * f * 0.6, vx: (Math.random() - 0.3) * 14, vy: -Q.fumeeMonte * (0.6 + Math.random() * 0.6), t0: rt });
+      }
     }
   }
   braises = braises.filter(p => rt - p.t0 < Q.braiseVie);
+  fumees = fumees.filter(p => rt - p.t0 < Q.fumeeVie);
+  for (const p of fumees) { p.x += p.vx * dt / 1000; p.y += p.vy * dt / 1000; }
   for (const p of braises) { p.x += p.vx * dt / 1000; p.y += p.vy * dt / 1000; }
 
   // Le héros à bout de souffle laisse échapper de la buée
@@ -729,8 +781,8 @@ function dessinerCiel() {
   ctx.fillRect(0, 0, W, H);
   const mx = W * C.lune.x, my = H * C.lune.y, R = C.lune.halo * kui;
   const h = ctx.createRadialGradient(mx, my, 0, mx, my, R);
-  h.addColorStop(0, `rgba(217,212,230,${C.lune.haloAlpha})`);
-  h.addColorStop(1, 'rgba(217,212,230,0)');
+  h.addColorStop(0, `rgba(${C.lune.haloCouleur},${C.lune.haloAlpha})`);
+  h.addColorStop(1, `rgba(${C.lune.haloCouleur},0)`);
   ctx.fillStyle = h;
   ctx.fillRect(mx - R, my - R, R * 2, R * 2);
   ctx.fillStyle = C.lune.couleur;
@@ -916,8 +968,8 @@ function dessinerHalo() {
   if (f < 0.02) return;
   const y = S.solY - H.hauteur;
   const g = ctx.createRadialGradient(boss.x, y, 0, boss.x, y, H.rayon);
-  g.addColorStop(0, `rgba(255,120,40,${H.alpha * f})`);
-  g.addColorStop(1, 'rgba(255,100,20,0)');
+  g.addColorStop(0, `rgba(${H.couleur},${H.alpha * f})`);
+  g.addColorStop(1, `rgba(${H.couleur},0)`);
   ctx.fillStyle = g;
   ctx.fillRect(boss.x - H.rayon, y - H.rayon, H.rayon * 2, H.rayon * 2);
 }
@@ -1015,6 +1067,13 @@ function dessinerImpactBlanc() {
 
 function dessinerParticulesMonde() {
   const Q = S.queues, G = S.signaux;
+  for (const p of fumees) {
+    const a = (rt - p.t0) / Q.fumeeVie;
+    ctx.fillStyle = `rgba(14,10,12,${Q.fumeeAlpha * (1 - a)})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Q.fumeeTaille * (0.7 + a * 1.8), 0, Math.PI * 2);
+    ctx.fill();
+  }
   for (const p of braises) {
     const a = 1 - (rt - p.t0) / Q.braiseVie;
     ctx.fillStyle = `rgba(255,${Math.round(120 + 100 * a)},50,${a})`;

@@ -23,7 +23,8 @@ Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer, Ma
 
 1. Ouvrir le lien dans le navigateur du téléphone.
 2. Tourner le téléphone à l'horizontale.
-3. Après une mise à jour du dépôt, attendre une à deux minutes puis recharger la page. Si rien ne change, ouvrir le lien en navigation privée.
+3. Toucher l'écran une fois : le jeu passe en plein écran et reste à l'horizontale (Android). Sur iPhone, le navigateur ne le permet pas : ouvrir le menu Partager, puis « Sur l'écran d'accueil », et lancer le jeu depuis l'icône.
+4. Après une mise à jour du dépôt, attendre une à deux minutes puis recharger la page. Si rien ne change, ouvrir le lien en navigation privée.
 
 ## État des lots
 

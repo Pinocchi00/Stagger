@@ -150,8 +150,8 @@ const SETTINGS = {
     graine: 11,
     marge: 260,               // débord de chaque côté de l'arène
     ciel: {
-      haut: '#05050a', bas: '#1b1521',
-      lune: { x: 0.74, y: 0.2, rayon: 30, couleur: '#d9d4e6', halo: 170, haloAlpha: 0.32 }, // x, y : part de l'écran
+      haut: '#040307', bas: '#190d13',
+      lune: { x: 0.74, y: 0.2, rayon: 30, couleur: '#b9a79d', halo: 170, haloAlpha: 0.2, haloCouleur: '170,60,50' }, // x, y : part de l'écran
       nuages: [
         { x: 0.6, y: 0.19, largeur: 300, hauteur: 26, alpha: 0.55 },
         { x: 0.82, y: 0.25, largeur: 220, hauteur: 20, alpha: 0.45 },
@@ -177,7 +177,7 @@ const SETTINGS = {
       jointEcart: 70,           // écart des joints verticaux à la ligne du sol
       jointEvase: 0.7,          // élargissement avec la profondeur
       fissures: 16, fissureLongueur: 46,
-      lumiere: { rayon: 360, alpha: 0.2, couleur: '255,140,60', aplat: 0.26 },
+      lumiere: { rayon: 360, alpha: 0.2, couleur: '200,60,28', aplat: 0.26 },
     },
     brume: [
       { vitesse: 7, hauteur: 70, largeur: 560, y: -8, alpha: 0.11, devant: false },
@@ -187,14 +187,14 @@ const SETTINGS = {
     cendres: { nombre: 70, vx: 18, vy: 24, vent: 8, taille: 1.8, alpha: 0.55, couleur: '#c2bacb' },
     braises: { vxFacteur: 2.2, vyFacteur: 1.3, couleur: '#ff8a2a' }, // la phase 2 transforme les cendres en braises
     premierPlan: { parallaxe: -0.22, couleur: '#020204', alpha: 0.93, largeur: 80, fondu: 130, x: 30 },
-    vignette: { alpha: 0.62, depart: 0.38 },     // départ : part du rayon où l'assombrissement commence
-    halo: { rayon: 230, alpha: 0.3, hauteur: 80 }, // derrière le boss
+    vignette: { alpha: 0.72, depart: 0.34 },     // départ : part du rayon où l'assombrissement commence
+    halo: { rayon: 230, alpha: 0.26, hauteur: 80, couleur: '190,40,16' }, // derrière le boss
     haloHeros: { rayon: 90, alpha: 0.14, hauteur: 40, couleur: '225,215,195' }, // lueur pâle qui détache le héros du décor
     eclair: { ms: 150, alpha: 0.5, couleur: '255,235,220' }, // à l'explosion d'un Sort
     phase2: { rougeAlpha: 0.09 },
   },
 
-  // Les cinq queues de Grimalkin (flammes au bout de chacune)
+  // Les cinq queues de Grimalkin : des échines d'os calcinées, des flammes sombres au bout
   queues: {
     nombre: 5,
     baseDx: 9,                // départ de la queue derrière le dos, en pixels de sprite
@@ -202,19 +202,33 @@ const SETTINGS = {
     angles: [28, 56, 84, 112, 138], // degrés au-dessus de l'horizontale arrière
     longueur: 104,            // unités
     longueurVariation: 0.16,  // écart de longueur d'une queue à l'autre
-    epaisseur: 9,
+    epaisseur: 8,
     ondulation: 17,
     ondulationHz: 1.7,
-    couleur: '#322c30',
-    couleurPointe: '#6a2f16',
-    segments: 14,
-    flamme: { taille: 25, largeur: 0.5, scintillementHz: 9, halo: 2.4, haloAlpha: 0.38 },
+    couleur: '#100b0b',       // chair carbonisée
+    os: '#6a604f',            // vertèbres
+    osContour: '#1d1713',
+    vertebre: 4.2,            // demi-longueur d'une vertèbre à la base
+    braiseFissure: '255,80,18', // la braise qui court dans l'échine, vers la pointe
+    braiseFissureDebut: 0.45, // part de la queue où elle commence
+    segments: 18,
+    flamme: {
+      taille: 27, langues: 5, largeur: 0.34, scintillementHz: 11,
+      halo: 2.6, haloAlpha: 0.3, haloCouleur: '200,40,14',
+      couches: ['#4a0a06', '#a82a0a', '#f06a16', '#ffd27a'],
+    },
     phase2Facteur: 1.4,       // flammes plus grandes en phase 2
     vacilleFacteur: 0.55,     // et plus faibles quand il vacille
     braisesParSeconde: 5,     // par queue
     braiseVie: 900,           // ms
     braiseVitesse: 40,
     braisesMax: 90,
+    fumeeParSeconde: 3,       // par queue
+    fumeeVie: 1700,           // ms
+    fumeeMonte: 28,
+    fumeeTaille: 7,
+    fumeeAlpha: 0.32,
+    fumeeMax: 60,
   },
 
   // Vie et endurance du héros, rendues par l'image plutôt que par des barres
