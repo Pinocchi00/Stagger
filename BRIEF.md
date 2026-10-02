@@ -16,7 +16,7 @@ Un combat de boss en 2D vu de profil, sur téléphone : un héros qui court, rou
 | --- | --- |
 | Support | Téléphone tenu à l'horizontale, dans le navigateur. Jouable au clavier sur PC pour tester. |
 | Technique | HTML, JavaScript et Canvas 2D, sans moteur ni framework. Mise en ligne sur GitHub Pages. 60 images par seconde. |
-| Vue | De profil. Une seule arène fixe, large comme l'écran, sans défilement. Le héros part à gauche, le boss à droite. |
+| Vue | De profil, dans une seule arène. Le héros part à gauche, le boss à droite. À partir du lot 6, la caméra est rapprochée et suit le duel. |
 | Visuel | Version de base en formes simples dessinées par le code. Ensuite, sprites gratuits en pixel art. |
 | Coût | Zéro. Uniquement des packs gratuits, utilisables dans un projet commercial. |
 | Difficulté | Exigeante, sans mode facile. On meurt beaucoup avant de gagner. |
@@ -99,7 +99,107 @@ Mets toutes les valeurs chiffrées dans le fichier de réglages.
 | 4. Les sprites | Les deux packs gratuits remplacent les rectangles, calés sur les durées du fichier de réglages. | Chaque attaque du boss se reconnaît à son animation avant de frapper. |
 | 5. Décor, effets et son | Un fond sombre en plusieurs plans, arrêt sur image et tremblement à l'impact, sons produits par le code. | Quelqu'un qui regarde par-dessus ton épaule veut essayer. |
 
-Compte une séance par lot. Les lots 1 et 3 sont surtout du réglage.
+Les lots 0 à 5 sont terminés. Les lots 6 à 13 sont détaillés dans la section suivante.
+
+## Lots 6 à 13
+
+Ces lots font du prototype un jeu : d'abord ce qui se joue, ensuite ce qui se voit et s'entend. Le lot 6 ajoute aussi les lots 6 à 13 à la liste de `README.md`. Chacun s'envoie avec ce message :
+
+```
+Lis BRIEF.md. Réalise uniquement le lot N, décrit dans la section « Lots 6 à 13 ».
+N'ajoute rien qui ne figure pas dans le brief.
+Mets toutes les valeurs chiffrées dans le fichier de réglages.
+À la fin, coche le lot dans README.md et explique-moi comment tester sur téléphone.
+```
+
+### Lot 6 : caméra et lisibilité
+
+- **Caméra rapprochée.** Le héros occupe environ un quart de la hauteur de l'écran. La caméra suit le milieu entre le héros et le boss, avec un mouvement adouci. S'ils s'éloignent trop pour tenir à l'écran, elle recule juste assez pour garder les deux.
+- **Arène de largeur fixe.** 1 200 unités, avec un mur invisible à chaque bout, quelle que soit la taille de l'écran. Le boss démarre à 500 unités du héros.
+- **Pixels à la même taille.** Le héros et le boss sont agrandis par le même facteur entier. Le boss sera moins haut qu'aujourd'hui, mais net.
+- **Plus de formes provisoires.** Le rectangle rouge du Fauchage devient un arc clair qui suit la faux pendant 0,15 seconde. Le disque rouge du Sort devient un cercle de runes de la couleur du boss, qui pulse jusqu'à l'explosion. Le rectangle gris de l'attaque du héros disparaît.
+- **Attaque à la pose du doigt.** Elle part dès que le doigt touche l'écran. Si le doigt glisse avant le coup, la roulade annule l'attaque et son coût en endurance est rendu.
+- **Interface lisible.** Barres deux fois plus hautes. Écran de départ « Touche pour commencer ». En position verticale, le jeu se met en pause et affiche « Tourne ton téléphone ».
+
+Validé quand : sur le téléphone, le héros se lit sans effort et aucune forme provisoire n'apparaît.
+
+### Lot 7 : boss varié et vacillement
+
+Ce lot remplace le comportement décrit dans la section « Le boss ».
+
+- **Il approche toujours.** Il marche vers le héros à toute distance. De loin, il s'arrête parfois pour lancer un Sort, au lieu de les enchaîner sur place.
+- **Choix des attaques.** Tirage au hasard avec un poids par attaque, jamais trois fois la même de suite.
+- **Portée du héros.** Son attaque passe à 90.
+- **Vacillement.** Le boss a une jauge de posture, affichée en trait fin sous sa barre de vie. Chaque coup du héros la remplit d'un cran, le second coup d'un enchaînement d'un cran et demi. Elle se vide d'un cran par seconde après 2 secondes sans coup. À 6 crans, le boss vacille : son attaque est interrompue, il reste sans défense 2 secondes et subit des dégâts multipliés par 1,5. La jauge repart de zéro.
+
+| Attaque | Annonce | Ce qui la distingue |
+| --- | --- | --- |
+| Fauchage | Élan de 0,6 s | L'attaque actuelle, avec une portée ramenée à 150. |
+| Fauchage retardé | Élan tenu 1,1 s, la faux luit en blanc | Il punit la roulade lancée trop tôt. |
+| Double fauchage | Élan de 0,6 s, puis second coup 0,45 s après | Le boss se retourne vers le héros avant le second coup. |
+| Sort | Incantation de 0,8 s, marque sous le héros | Il peut aussi partir au contact. |
+| Pluie de sorts | Incantation de 0,8 s, trois marques à 0,35 s d'écart | Phase 2 seulement. |
+
+Validé quand : en restant au contact trente secondes, on voit au moins trois attaques différentes. Faire vaciller le boss donne envie de recommencer.
+
+### Lot 8 : réglage du combat
+
+Aucune nouveauté. Tu joues sur ton téléphone et tu fais ajuster les valeurs : vie, dégâts, portées, durées d'annonce, ouvertures, posture.
+
+Validé quand : tu bats le boss après plusieurs dizaines de tentatives, et tu peux nommer la cause de chaque mort.
+
+### Lot 9 : monstres personnalisés
+
+- **Fiche de monstre.** Tout ce qui définit le boss tient dans une fiche du fichier de réglages : nom, taille, vie, vitesse, palette, effets, liste des attaques avec leur poids. Créer une variante revient à copier une fiche. Un réglage `bossActif` choisit la fiche jouée.
+- **Deux fiches livrées.** « Le Faucheur de cendre », lent et endurant, en gris et os. « Le Faucheur de braise », plus rapide et plus fragile, en noir et rouge, qui lance davantage de sorts.
+- **Palette repeinte par le code.** Au chargement, le code repeint les planches du héros et du boss : désaturation, puis remplacement des couleurs listées dans la fiche. Une couleur d'accent par personnage est préservée.
+- **Effets attachés au boss.** Une lueur qui pulse au niveau de la tête. Des cendres ou des braises qui montent de son corps. Une traînée derrière la faux. Tout s'intensifie en phase 2.
+- **Effets attachés au héros.** De la poussière au départ et à la fin de la roulade. Des étincelles à l'impact de ses coups.
+- **Ombres au sol** sous le héros et sous le boss.
+
+Validé quand : le héros et le boss semblent venir du même jeu, et changer de fiche change le monstre sans toucher au code.
+
+### Lot 10 : environnement
+
+- **Cinq plans.** Un ciel avec un astre voilé. Une ruine immense au loin. Des colonnes et des arches brisées. Des tombes et des grilles près du sol. Des silhouettes floues et très sombres au premier plan, devant les personnages.
+- **Sol.** Des dalles fissurées, plus claires autour des personnages.
+- **Brume.** Deux nappes translucides qui dérivent à des vitesses différentes.
+- **Météo.** Des cendres qui tombent en biais, poussées par le vent.
+- **Lumière.** Les bords de l'écran sont assombris. Un halo se tient derrière le boss. Un éclair bref éclaire la scène à l'explosion d'un Sort.
+- **Phase 2.** Le vent forcit, les cendres deviennent des braises, la scène vire légèrement au rouge.
+
+Validé quand : une capture d'écran prise au hasard donne envie de savoir ce qu'est ce jeu.
+
+### Lot 11 : ambiance sonore
+
+Tous les sons restent produits par le code.
+
+- **Fond.** Un vent continu et un bourdon grave, qui varient lentement.
+- **Musique.** En phase 1, un tambour lent sur le bourdon. En phase 2, un tambour deux fois plus rapide et une note dissonante. Silence complet pendant le vacillement.
+- **Héros.** Ses pas, le souffle de la roulade, le sifflement de la lame.
+- **Boss.** Des pas lourds, un râle au début de chaque attaque, un son d'annonce différent par attaque.
+- **Impacts.** Le fond baisse brièvement à chaque coup, pour que l'impact ressorte.
+
+Validé quand : les yeux fermés, on reconnaît chaque attaque et le passage en phase 2.
+
+### Lot 12 : mise en scène
+
+- **Écran titre.** Le nom du jeu, STAGGER, et « Touche pour commencer ».
+- **Entrée du boss.** À la première tentative seulement : bandes noires, la caméra glisse du héros au boss, le boss se redresse, son nom s'affiche. La scène dure 4 secondes et se passe d'un toucher.
+- **Vacillement.** Ralenti d'une demi-seconde, zoom sur le boss, bandes noires.
+- **Passage en phase 2.** Le combat se fige 1,5 seconde : zoom sur le boss, tremblement, la météo bascule.
+- **Coup fatal.** Ralenti d'une seconde, zoom, son coupé.
+- **Mort du héros.** Ralenti, l'image perd ses couleurs, le mot MORT apparaît. La reprise reste sous les 2 secondes.
+- **Victoire.** Le boss tombe en cendres, silence, puis le temps du combat et le nombre de tentatives s'affichent.
+- **Caméra vivante.** Léger zoom à chaque coup donné, léger recul à chaque attaque du boss.
+
+Validé quand : quelqu'un qui regarde par-dessus ton épaule veut essayer.
+
+### Lot 13 : réglage final
+
+Aucune nouveauté. Les effets, les sons et la mise en scène ont changé le rythme : les valeurs du combat sont reprises une dernière fois.
+
+Validé quand : le combat est aussi lisible qu'au lot 8, avec tout l'habillage.
 
 ## Plus tard
 
