@@ -48,6 +48,8 @@ function ajuster() {
   d = window.devicePixelRatio || 1;
   canvas.width = Math.round(window.innerWidth * d);
   canvas.height = Math.round(window.innerHeight * d);
+  canvas.style.width = window.innerWidth + 'px';   // même taille que le dessin : rien n'est écrasé
+  canvas.style.height = window.innerHeight + 'px';
   kui = window.innerHeight / S.hauteurInterface;
   genererCendres();
   if (hero.x !== undefined) { const c = cibleCamera(); cam.x = c.x; cam.z = c.z; }
@@ -1125,7 +1127,7 @@ let chargees = 0;
 for (const nom of noms) {
   const im = new Image();
   im.onload = () => { chargees++; };
-  im.src = `images/${nom}.png`;
+  im.src = `images/${nom}.png?v=${S.version}`;
   images[nom] = im;
 }
 const pret = () => chargees === noms.length;

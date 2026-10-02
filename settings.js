@@ -1,6 +1,7 @@
 // Fichier de réglages : toutes les valeurs chiffrées du jeu vivent ici.
 // Les valeurs des lots suivants s'y ajoutent au fil des lots.
 const SETTINGS = {
+  version: 4,                 // change à chaque mise à jour des images, pour que le téléphone les recharge
   fps: 60,
   dtMaxMs: 100,               // plus long pas de temps accepté entre deux images
 
@@ -248,8 +249,8 @@ const SETTINGS = {
   },
 
   // Parade : un coup d'épée au bon moment, quand l'impact de la lame tombe avec celui du boss
-  paradeParfaiteMs: 120,      // parfaite : écart total toléré entre les deux impacts (la moitié de chaque côté)
-  paradeSimpleMs: 250,        // simple : écart total toléré
+  paradeParfaiteMs: 200,      // parfaite : écart total toléré entre les deux impacts (la moitié de chaque côté)
+  paradeSimpleMs: 520,        // simple : écart total toléré, ici toute la durée de l'attaque
   enduranceParadeSimple: 20,  // la parade simple use en plus l'endurance
   paradeSimpleRecul: 40,
   paradeSimpleReculMs: 150,
