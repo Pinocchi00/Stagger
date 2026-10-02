@@ -28,7 +28,7 @@ Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer, Ma
 
 - [x] 0. Mise en place
 - [x] 1. Le héros
-- [ ] 2. Le boss
+- [x] 2. Le boss
 - [ ] 3. Phase 2 et réglage
 - [ ] 4. Les sprites
 - [ ] 5. Décor, effets et son

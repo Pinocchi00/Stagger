@@ -37,11 +37,38 @@ const SETTINGS = {
   attaqueImpactRatio: 0.5,    // moment du coup dans l'attaque, en part de sa durée
   enchainementMs: 300,        // temps après une attaque pour enchaîner la deuxième
 
-  // Mannequin (lot 1)
-  mannequinLargeur: 70,
-  mannequinHauteurHeros: 3,   // hauteur, en hauteurs de héros
-  mannequinDepartDroite: 160, // distance entre son bord droit et le bord de l'écran
-  mannequinFlashMs: 120,
+  // Boss (lot 2)
+  bossNom: 'Le Boss',         // son nom reste à choisir
+  bossVie: 400,
+  bossLargeur: 70,
+  bossHauteurHeros: 3,        // hauteur, en hauteurs de héros
+  bossDepartDroite: 160,      // distance entre son bord droit et le bord de l'écran
+  bossVitesse: 120,           // marche, unités par seconde
+  bossDebutMs: 1000,          // immobilité au début du combat
+  bossOuvertureMs: 800,       // immobilité après chaque attaque : l'ouverture
+  bossDistanceSort: 400,      // au-delà de cet écart, il lance le Sort
+  bossFlashMs: 120,           // éclat quand il est touché
+
+  // Fauchage (lot 2)
+  fauchageAnnonceMs: 600,
+  fauchageDegats: 35,
+  fauchagePortee: 220,        // zone frappée devant lui, depuis son bord
+  fauchageZoneMs: 150,        // durée d'affichage de la zone rouge
+
+  // Sort (lot 2)
+  sortAnnonceMs: 800,
+  sortMarqueMs: 700,          // délai entre l'apparition de la marque et l'explosion
+  sortDegats: 30,
+  sortRayon: 90,              // demi-largeur de la marque au sol
+  sortExplosionMs: 150,       // durée d'affichage de l'explosion
+
+  // Coup reçu par le héros (lot 2)
+  coupRecuMs: 300,            // héros sans contrôle
+  coupRecuRecul: 90,          // distance de recul
+
+  // Mort et victoire (lot 2)
+  mortMs: 1200,               // de la mort à la reprise, moins de 2 secondes
+  victoireAttenteMs: 800,     // avant de pouvoir relancer après la victoire
 
   // Commandes tactiles (lot 1)
   zoneMortePx: 12,            // glissement minimal du pouce gauche pour marcher
@@ -53,4 +80,9 @@ const SETTINGS = {
   barreHauteur: 14,
   barreMarge: 16,
   barreEspace: 8,
+  bossBarreLargeur: 520,
+  bossBarreBas: 44,           // distance entre la barre du boss et le bas de l'écran
+  clignoteMs: 100,            // clignotement orange du boss pendant l'annonce
+  texteTaille: 48,
+  nomTaille: 18,
 };
