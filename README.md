@@ -30,7 +30,7 @@ Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer, Ma
 - [x] 1. Le héros
 - [x] 2. Le boss
 - [x] 3. Phase 2 et réglage
-- [ ] 4. Les sprites
+- [x] 4. Les sprites
 - [ ] 5. Décor, effets et son
 
 ## Règles du projet
@@ -43,3 +43,8 @@ Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer, Ma
 ## Technique
 
 HTML, JavaScript et Canvas 2D, sans moteur ni framework. Rien à installer. Mise en ligne sur GitHub Pages.
+
+## Crédits
+
+- Héros : [Fantasy Knight](https://aamatniekss.itch.io/fantasy-knight-free-pixelart-animated-character), d'aamatniekss.
+- Boss : [Bringer of Death](https://clembod.itch.io/bringer-of-death-free), de Clembod.

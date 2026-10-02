@@ -299,6 +299,67 @@ function barre(x, y, largeur, part, couleur) {
   ctx.fillRect(x, y, largeur * part, S.barreHauteur);
 }
 
+// ---------- Sprites ----------
+const noms = ['heros-attente', 'heros-course', 'heros-roulade', 'heros-attaque1', 'heros-attaque2', 'heros-touche', 'heros-mort',
+  'boss-attente', 'boss-marche', 'boss-fauchage', 'boss-incantation', 'boss-sort', 'boss-touche', 'boss-mort'];
+const images = {};
+let chargees = 0;
+for (const nom of noms) {
+  const im = new Image();
+  im.onload = () => { chargees++; };
+  im.src = `images/${nom}.png`;
+  images[nom] = im;
+}
+const pret = () => chargees === noms.length;
+
+// Image et nombre de vignettes d'une planche
+function anim(nom) {
+  const im = images[nom];
+  const fl = nom.startsWith('heros') ? S.heroSprite.largeur : S.bossSprite.largeur;
+  return [im, Math.round(im.width / fl)];
+}
+const boucle_ = (n) => Math.floor(gt * S.animFps / 1000) % n;
+const part = (t, duree, n) => Math.max(0, Math.min(n - 1, Math.floor(t / duree * n)));
+const nbFrames = (nom) => anim(nom)[1];
+
+function frameHero() {
+  if (jeu.etat === 'mort') return ['heros-mort', part(jeu.t, S.mortMs, nbFrames('heros-mort'))];
+  if (hero.etat === 'roulade') return ['heros-roulade', part(hero.t, S.rouladeMs, nbFrames('heros-roulade'))];
+  if (hero.etat === 'attaque') {
+    const nom = hero.attaqueN === 2 ? 'heros-attaque2' : 'heros-attaque1';
+    return [nom, part(hero.t, S.attaqueMs, nbFrames(nom))];
+  }
+  if (hero.etat === 'touche') return ['heros-touche', 0];
+  const nom = jeu.etat === 'combat' && direction() !== 0 ? 'heros-course' : 'heros-attente';
+  return [nom, boucle_(nbFrames(nom))];
+}
+
+function frameBoss() {
+  if (jeu.etat === 'victoire') return ['boss-mort', part(jeu.t, S.bossMortMs, nbFrames('boss-mort'))];
+  if (boss.etat === 'fauchage') {
+    const n = nbFrames('boss-fauchage'), imp = S.fauchageFrameImpact;
+    if (boss.t < S.fauchageAnnonceMs) return ['boss-fauchage', part(boss.t, S.fauchageAnnonceMs, imp)];
+    return ['boss-fauchage', imp + part(boss.t - S.fauchageAnnonceMs, S.fauchageZoneMs, n - imp)];
+  }
+  if (boss.etat === 'sort') {
+    const n = nbFrames('boss-incantation');
+    return ['boss-incantation', part(boss.t, S.sortAnnonceMs, n)];
+  }
+  if (gt - boss.flash < S.bossFlashMs) return ['boss-touche', part(gt - boss.flash, S.bossFlashMs, nbFrames('boss-touche'))];
+  if (boss.etat === 'marche') return ['boss-marche', boucle_(nbFrames('boss-marche'))];
+  return ['boss-attente', boucle_(nbFrames('boss-attente'))];
+}
+
+// Dessine la vignette f d'une planche, les pieds posés sur le sol
+function dessinerSprite(im, f, x, miroir, sp, pivotX = sp.pivotX) {
+  const e = sp.echelle;
+  ctx.save();
+  ctx.translate(x, S.solY);
+  if (miroir) ctx.scale(-1, 1);
+  ctx.drawImage(im, f * sp.largeur, 0, sp.largeur, sp.hauteur, -pivotX * e, -sp.pivotY * e, sp.largeur * e, sp.hauteur * e);
+  ctx.restore();
+}
+
 function dessiner() {
   ctx.setTransform(d * k, 0, 0, d * k, 0, 0);
   ctx.fillStyle = '#0e0e12';
@@ -306,25 +367,28 @@ function dessiner() {
   ctx.fillStyle = '#1b1b21';
   ctx.fillRect(0, S.solY, largeurArene, S.hauteurArene - S.solY);
 
+  if (!pret()) return;
+  ctx.imageSmoothingEnabled = false;
+
   // Marque du Sort
   if (boss.etat === 'sort' && boss.marque) {
     const m = boss.marque;
     const explose = boss.applique;
     ctx.fillStyle = explose ? 'rgba(255,90,60,0.9)' : 'rgba(200,30,30,0.7)';
-    if (explose) ctx.fillRect(m.x - S.sortRayon, S.solY - S.hauteurArene, S.sortRayon * 2, S.hauteurArene);
     ctx.beginPath();
     ctx.ellipse(m.x, S.solY + 14, S.sortRayon, 10, 0, 0, Math.PI * 2);
     ctx.fill();
+    const total = S.sortMarqueMs + S.sortExplosionMs;
+    const [im, n] = anim('boss-sort');
+    const f = Math.min(n - 1, Math.floor((boss.t - m.t0) / total * n));
+    dessinerSprite(im, f, m.x, false, S.bossSprite, S.sortPivotX);
   }
 
   // Boss
-  const annonce = (boss.etat === 'fauchage' && boss.t < S.fauchageAnnonceMs) ||
-                  (boss.etat === 'sort' && boss.t < S.sortAnnonceMs);
-  let couleur = '#2a2a31';
-  if (annonce && Math.floor(boss.t / S.clignoteMs) % 2 === 0) couleur = '#e8761a';
-  if (gt - boss.flash < S.bossFlashMs) couleur = '#d9d9d9';
-  ctx.fillStyle = couleur;
-  ctx.fillRect(boss.x - boss.w / 2, S.solY - boss.h, boss.w, boss.h);
+  {
+    const [nom, f] = frameBoss();
+    dessinerSprite(images[nom], f, boss.x, boss.dir > 0, S.bossSprite);
+  }
 
   // Zone du Fauchage
   if (boss.etat === 'fauchage' && boss.t >= S.fauchageAnnonceMs) {
@@ -334,8 +398,6 @@ function dessiner() {
   }
 
   // Héros
-  const roule = hero.etat === 'roulade';
-  const h = roule ? S.heroHauteur * S.rouladeAplatiRatio : S.heroHauteur;
   if (hero.etat === 'attaque') {
     const portee = S.attaquePorteeLargeurs * S.heroLargeur;
     const depart = hero.x + hero.dir * S.heroLargeur / 2;
@@ -343,8 +405,11 @@ function dessiner() {
     ctx.fillRect(Math.min(depart, depart + hero.dir * portee), S.solY - S.heroHauteur, portee, S.heroHauteur);
   }
   ctx.globalAlpha = invulnerable() ? S.rouladeAlpha : 1;
-  ctx.fillStyle = '#e6e6e6';
-  ctx.fillRect(hero.x - S.heroLargeur / 2, S.solY - h, S.heroLargeur, h);
+  {
+    const [nom, f] = frameHero();
+    const versGauche = hero.etat === 'roulade' ? hero.rouladeDir < 0 : hero.dir < 0;
+    dessinerSprite(images[nom], f, hero.x, versGauche, S.heroSprite);
+  }
   ctx.globalAlpha = 1;
 
   // Vie et endurance du héros, en haut à gauche

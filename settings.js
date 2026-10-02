@@ -77,6 +77,14 @@ const SETTINGS = {
   mortMs: 1200,               // de la mort à la reprise, moins de 2 secondes
   victoireAttenteMs: 800,     // avant de pouvoir relancer après la victoire
 
+  // Sprites (lot 4) : taille d'une vignette, point d'appui au sol, échelle
+  heroSprite: { largeur: 120, hauteur: 80, pivotX: 55, pivotY: 80, echelle: 2.16 },
+  bossSprite: { largeur: 140, hauteur: 93, pivotX: 106, pivotY: 92, echelle: 4.4 },
+  sortPivotX: 68,             // point d'appui de l'effet du Sort
+  animFps: 10,                // images par seconde des animations en boucle
+  fauchageFrameImpact: 4,     // vignette du Fauchage qui tombe sur l'impact
+  bossMortMs: 1000,           // animation de mort du boss
+
   // Commandes tactiles (lot 1)
   zoneMortePx: 12,            // glissement minimal du pouce gauche pour marcher
   glisserMinPx: 40,           // glissement minimal du pouce droit pour rouler
@@ -89,7 +97,6 @@ const SETTINGS = {
   barreEspace: 8,
   bossBarreLargeur: 520,
   bossBarreBas: 44,           // distance entre la barre du boss et le bas de l'écran
-  clignoteMs: 100,            // clignotement orange du boss pendant l'annonce
   texteTaille: 48,
   nomTaille: 18,
 };
