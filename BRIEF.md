@@ -150,7 +150,7 @@ Mets toutes les valeurs chiffrées dans le fichier de réglages.
 | Lot | Contenu | Validé quand |
 | --- | --- | --- |
 | 0. Mise en place | Dépôt GitHub, `index.html` qui affiche un écran noir en plein écran à l'horizontale, `README.md`, `BRIEF.md`, fichier de réglages, mise en ligne sur GitHub Pages. | Le lien GitHub Pages s'ouvre sur ton téléphone. |
-| 1. La parade seule | Le boss, avec ses trois premières images (attente, élan, coup), lance une seule attaque en boucle, la Taille vive. Toucher pour parer : parfaite, simple, ratée. Arrêt sur image, éclat, tremblement. | Parer dix fois de suite donne envie de continuer. Le retard tactile est réglé sur ton téléphone. |
+| 1. La parade seule | Le boss, avec ses trois premières images (attente, élan, coup), lance une seule attaque en boucle, la Taille vive. Toucher pour parer : parfaite, simple, ratée. Arrêt sur image, éclat, tremblement, trois sons provisoires. | Parer dix fois de suite donne envie de continuer. Le retard tactile est réglé sur ton téléphone. |
 | 2. Les trois gestes | Esquive, frappe rapide, frappe chargée, ouvertures. Ajout de la Taille lente et du Fauchage. Vie du joueur, mort, reprise immédiate. | Les trois gestes ne se confondent jamais. Après une mort, on rejoue en moins de 2 secondes. |
 | 3. La garde et les queues | Garde du boss, vacillement, queue tranchée dans l'ordre, les cinq attaques de queue, accélération. | Un combat se joue de la première à la cinquième queue sans blocage. |
 | 4. Phase 2, victoire et arme | La phase 2, la victoire, la scène de l'épée, l'écran de l'arme, sa sauvegarde, le combat rejouable avec elle. | La victoire donne envie de montrer l'arme à quelqu'un. |
@@ -162,7 +162,7 @@ Mets toutes les valeurs chiffrées dans le fichier de réglages.
 
 Les lots 1 à 4 n'utilisent que les trois premières images du boss : le combat doit être bon avant que tu produises les autres. Compte une séance par lot, et davantage pour les lots 1, 5 et 9, qui sont surtout du réglage.
 
-Le `README.md` du lot 0 tient en une page : le jeu en trois lignes, le lien pour jouer, la façon de tester sur téléphone, l'état de chaque lot, et la règle « rien hors du brief ». Il est mis à jour à la fin de chaque lot.
+Le `README.md` du lot 0 tient en une page : le jeu en trois lignes, le lien pour jouer, la façon de tester sur téléphone, l'état de chaque lot, et la règle « rien hors du brief ». Il est mis à jour à la fin de chaque lot. Un lot peut avoir une fiche détaillée, `LOT-N.md`, déposée dans le dépôt : elle précise le brief sans le contredire.
 
 ## Images à produire
 
