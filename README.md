@@ -16,7 +16,7 @@ Le jeu se joue dans le navigateur, téléphone tenu à l'horizontale.
 | Toucher | Moitié droite | Attaquer, et parer si le coup d'épée tombe au moment de celui du boss |
 | Glisser | Moitié droite | Esquiver : un déplacement rapide sur le côté |
 
-**Les flammes.** Grimalkin porte cinq queues enflammées, et ses coups ne l'entament qu'une flamme à la fois : chaque parade éteint une flamme, puis sa vie peut descendre d'un cinquième. Sans parade, ses flammes le protègent.
+**Les deux phases.** Grimalkin porte cinq queues enflammées. Tant qu'une flamme brûle, ses coups ne l'atteignent pas : chaque parade en éteint une, et il faut les cinq pour pouvoir le blesser. Les cinq éteintes, la moitié de sa vie peut tomber. À la moitié, il se métamorphose : ses flammes se rallument, une seconde lame apparaît, il frappe deux fois plus vite, et il faut de nouveau parer cinq fois avant de finir le combat.
 
 Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer (et parer), Maj pour esquiver.
 

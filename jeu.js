@@ -13,7 +13,11 @@ let braises = [];         // braises qui montent des flammes : { x, y, vx, vy, t
 let souffles = [];        // buée du héros essoufflé : { x, y, vx, vy, t0 }
 let fumees = [];          // fumée noire au-dessus des flammes : { x, y, vx, vy, t0 }
 let feux = [];            // particules de feu des flammes : { x, y, vx, vy, t0, vie, s, ph }
-let spritesFeu = [];      // taches lumineuses précalculées, une par couleur
+let spritesFeu = {};      // taches lumineuses précalculées : f1 (phase 1), f2 (phase 2), o (orbes)
+let projectiles = [];     // orbes du boss : { x, y, vx, t0 }
+let echos = [];           // images rémanentes du boss pendant ses fentes : { x, dir, nom, f, t0 }
+let fxListe = [];         // sprites d'impact en cours : { nom, x, y, miroir, t0 }
+let flashMeta = -1e9;     // instant du flash de la métamorphose
 let spriteFumee = null;   // tache de fumée douce
 let eclair = -1e9;        // instant du dernier éclair, en temps réel
 
@@ -91,7 +95,12 @@ function recommencer() {
     x: S.heroDepartX + S.bossDepartEcart,
     dir: -1,
     vie: S.bossVie,
-    etat: 'ouverture',    // marche, fauchage, sort, ouverture, vacille
+    phase: 1,             // 1 ou 2 : la métamorphose fait passer à la phase 2
+    fa: 1,                // facteur de durée des élans de l'attaque en cours
+    dash: null,           // fente de la ruée : { de, vers, t0, dernierEcho }
+    applique: false,      // le coup de la ruée a-t-il eu lieu
+    tirs: 0,              // orbes déjà lancées
+    etat: 'ouverture',    // marche, fauchage, sort, orbe, ruee, bond, ouverture, vacille, meta
     t: 0,                 // temps passé dans l'état, ms
     duree: S.bossDebutMs, // durée de l'ouverture en cours
     variante: null,       // fauchage : normal, retarde, double. sort : sort, pluie
@@ -107,6 +116,9 @@ function recommencer() {
     dernierCoup: -1e9,
     flash: -1e9,
   });
+  projectiles = [];
+  echos = [];
+  fxListe = [];
   jeu.etat = 'combat';
   jeu.t = 0;
   const c = cibleCamera();
@@ -221,6 +233,7 @@ function esquiver(dir) {
 function heroTouche(degats) {
   if (invulnerable()) return;
   hero.vie = Math.max(0, hero.vie - degats);
+  lancerFx('fx-degat-heros', hero.x, S.solY - S.heroHauteur * 0.55, boss.x > hero.x);
   impact(S.arretCoupRecuMs, S.tremblementCoupRecuMs, S.tremblementCoupRecuPx);
   jouer('coupRecu');
   hero.etat = 'touche';
@@ -230,6 +243,11 @@ function heroTouche(degats) {
   hero.reculDist = S.coupRecuRecul;
   hero.enfile = false;
   if (hero.vie <= 0) { jeu.etat = 'mort'; jeu.t = 0; jouer('mort'); }
+}
+
+// ---- Sprites d'impact ----
+function lancerFx(nom, x, y, miroir) {
+  fxListe.push({ nom, x, y, miroir, t0: rt });
 }
 
 // ---- Parade ----
@@ -273,6 +291,7 @@ function creerImpact(type) {
 
 function heroParade(type) {
   creerImpact(type);
+  lancerFx(type === 'parfaite' ? 'fx-parade-parfaite' : 'fx-parade-simple', hero.x + hero.dir * S.heroLargeur * S.contactX, S.solY - S.heroHauteur * S.contactY, hero.dir < 0);
   eteindreFlamme();
   if (type === 'parfaite') {
     boss.dernierCoup = gt;
@@ -389,30 +408,40 @@ function sortirDuBoss() {
   hero.x = hero.x < boss.x ? g - S.heroLargeur / 2 : dr + S.heroLargeur / 2;
 }
 
+// Palier sous lequel la vie du boss ne peut pas descendre tant que ses cinq flammes ne sont pas éteintes
+function plancherVie() {
+  const milieu = S.bossVie * (1 - S.phase1Part);
+  const eteintes = boss.eteintes >= S.queues.nombre;
+  if (boss.phase === 1) return eteintes ? milieu : S.bossVie;
+  return eteintes ? 0 : milieu;
+}
+
 function frapperBoss() {
   const depart = hero.x + hero.dir * S.heroLargeur / 2;
   const fin = depart + hero.dir * S.attaquePortee;
   if (!chevauche(Math.min(depart, fin), Math.max(depart, fin), boss.x - boss.w / 2, boss.x + boss.w / 2)) return;
   const vacille = boss.etat === 'vacille';
   const degats = (hero.attaqueN === 2 ? S.attaque2Degats : S.attaqueDegats) * (vacille ? S.vacilleDegatsFacteur : 1);
-  // Tant qu'une flamme protège le boss, la vie ne peut pas descendre sous le palier de cette flamme
-  const plancher = S.bossVie * (1 - boss.eteintes / S.queues.nombre);
-  const bloque = boss.vie <= plancher;
+  const plancher = plancherVie();
+  const bloque = boss.vie <= plancher || boss.etat === 'meta';
   boss.vie = Math.max(plancher, boss.vie - degats);
   boss.flash = gt;
   boss.dernierCoup = gt;
-  if (!vacille) {
+  if (!vacille && boss.etat !== 'meta') {
     boss.posture += hero.attaqueN === 2 ? S.postureCoup2 : S.postureCoup;
     if (boss.posture >= S.postureMax) vaciller();
   }
+  const cx = hero.x + hero.dir * (S.heroLargeur / 2 + S.attaquePortee * 0.7), cy = S.solY - S.heroHauteur * 0.9;
   if (bloque) {
-    creerImpact('bloque');
+    lancerFx('fx-bloque', cx, cy, hero.dir < 0);
     jouer('coupBloque');
     impact(0, S.tremblementCoupDonneMs, S.tremblementCoupDonnePx * 0.4);
     return;
   }
+  lancerFx('fx-degat-boss', cx, cy, hero.dir < 0);
   impact(S.arretCoupDonneMs, S.tremblementCoupDonneMs, S.tremblementCoupDonnePx);
   jouer('coupDonne');
+  if (boss.phase === 1 && boss.vie <= S.bossVie * (1 - S.phase1Part)) { metamorphoser(); return; }
   if (boss.vie <= 0) { jeu.etat = 'victoire'; jeu.t = 0; jouer('victoire'); }
 }
 
@@ -451,16 +480,19 @@ function majHero(dt) {
 // Écart entre le bord du boss et le bord du héros, négatif s'ils se chevauchent
 const ecart = () => Math.abs(hero.x - boss.x) - boss.w / 2 - S.heroLargeur / 2;
 
-const phase2 = () => boss.vie <= S.bossVie * S.phase2Seuil;
+const phase2 = () => boss.phase === 2;
+const facteurAnnonce = () => (phase2() ? S.phase2.annonceFacteur : 1);
+const facteurDegats = () => (phase2() ? S.phase2.degatsFacteur : 1);
 
 // Tirage au hasard pondéré, jamais plus de S.repetitionMax fois la même attaque de suite
 function choisirAttaque() {
+  const poids = phase2() ? S.poids2 : S.poids;
   const h = boss.historique;
   const repete = h.length >= S.repetitionMax && h.slice(-S.repetitionMax).every(n => n === h[h.length - 1]) ? h[h.length - 1] : null;
-  const choix = Object.keys(S.poids).filter(n => n !== repete && (n !== 'pluie' || phase2()));
-  let tirage = Math.random() * choix.reduce((somme, n) => somme + S.poids[n], 0);
+  const choix = Object.keys(poids).filter(n => n !== repete && poids[n] > 0);
+  let tirage = Math.random() * choix.reduce((somme, n) => somme + poids[n], 0);
   let nom = choix[choix.length - 1];
-  for (const n of choix) { tirage -= S.poids[n]; if (tirage < 0) { nom = n; break; } }
+  for (const n of choix) { tirage -= poids[n]; if (tirage < 0) { nom = n; break; } }
   h.push(nom);
   if (h.length > S.repetitionMax) h.shift();
   return nom;
@@ -471,23 +503,46 @@ function entrerMarche() {
   boss.t = 0;
   boss.prochaine = choisirAttaque();
   boss.delaiSort = S.sortLoinMinMs + Math.random() * (S.sortLoinMaxMs - S.sortLoinMinMs);
+  const b = S.bond;
+  if (ecart() < b.seuilEcart && Math.random() < (phase2() ? b.chance2 : b.chance)) lancerBond();
 }
 
+// Le boss recule d'un trait, face au héros
+function lancerBond() {
+  const sens = hero.x >= boss.x ? -1 : 1;
+  const place = sens < 0 ? boss.x - boss.w / 2 : S.arenaLargeur - boss.w / 2 - boss.x;
+  if (place < 60) return;
+  boss.etat = 'bond';
+  boss.t = 0;
+  boss.dir = hero.x >= boss.x ? 1 : -1;
+  boss.dash = { de: boss.x, vers: boss.x + sens * Math.min(S.bond.distance, place), t0: 0, dernierEcho: -1e9 };
+  jouer('bond');
+}
+
+const ATTAQUES_FAUCHAGE = ['fauchage', 'retarde', 'double'];
+const ATTAQUES_A_DISTANCE = ['sort', 'pluie', 'orbe', 'ruee'];
+
 function lancerBoss(nom) {
-  const fauchage = nom === 'fauchage' || nom === 'retarde' || nom === 'double';
-  jouer(fauchage ? 'annonceFauchage' : 'annonceSort');
-  boss.etat = fauchage ? 'fauchage' : 'sort';
+  const fauchage = ATTAQUES_FAUCHAGE.includes(nom);
+  jouer(fauchage ? 'annonceFauchage' : nom === 'ruee' ? 'annonceRuee' : nom === 'orbe' ? 'annonceOrbe' : 'annonceSort');
+  boss.etat = fauchage ? 'fauchage' : nom === 'ruee' ? 'ruee' : nom === 'orbe' ? 'orbe' : 'sort';
   boss.variante = nom === 'fauchage' ? 'normal' : nom;
+  boss.fa = facteurAnnonce();
   boss.t = 0;
   boss.frappes = 0;
   boss.retourne = false;
   boss.marques = [];
+  boss.tirs = 0;
+  boss.dash = null;
+  boss.applique = false;
+  boss.dir = hero.x >= boss.x ? 1 : -1;
 }
 
 function ouverture() {
   boss.etat = 'ouverture';
   boss.t = 0;
-  boss.duree = phase2() ? S.phase2OuvertureMs : S.bossOuvertureMs;
+  boss.duree = phase2() ? S.phase2.ouvertureMs : S.bossOuvertureMs;
+  boss.dash = null;
 }
 
 // Le coup du héros qui remplit la posture interrompt l'attaque en cours
@@ -497,19 +552,64 @@ function vaciller() {
   boss.posture = 0;
   boss.marques = [];
   boss.frappes = 0;
+  boss.dash = null;
 }
 
-// Instants, depuis le début de l'attaque, où le Fauchage frappe
+// À la moitié de sa vie, le boss se métamorphose : ses flammes se rallument, une seconde lame apparaît
+function metamorphoser() {
+  boss.etat = 'meta';
+  boss.t = 0;
+  boss.marques = [];
+  boss.frappes = 0;
+  boss.dash = null;
+  boss.posture = 0;
+  boss.metaFait = false;
+  projectiles = [];
+  jouer('metamorphose');
+  impact(S.meta.arretMs, S.meta.ms, S.meta.tremblementPx);
+}
+
+// Instants, depuis le début de l'attaque, où le Fauchage frappe : en phase 2, la seconde lame suit la première
 function tempsFrappes() {
-  if (boss.variante === 'retarde') return [S.fauchageRetardeMs];
-  if (boss.variante === 'double') return [S.fauchageAnnonceMs, S.fauchageAnnonceMs + S.doubleDelaiMs];
-  return [S.fauchageAnnonceMs];
+  const A = S.fauchageAnnonceMs * boss.fa;
+  let t = [A];
+  if (boss.variante === 'retarde') t = [S.fauchageRetardeMs * boss.fa];
+  else if (boss.variante === 'double') t = [A, A + S.doubleDelaiMs * boss.fa];
+  if (phase2()) t = t.flatMap(x => [x, x + S.phase2.secondeLameMs]);
+  return t;
 }
 
 function zoneFauchage() {
   const depart = boss.x + boss.dir * boss.w / 2;
   const fin = depart + boss.dir * S.fauchagePortee;
   return [Math.min(depart, fin), Math.max(depart, fin)];
+}
+
+// Le coup du boss tombe sur le héros : paré, ou subi
+function coupDuBoss(degats) {
+  const [g, dr] = zoneFauchage();
+  if (!chevauche(heroG(), heroD(), g, dr)) return;
+  const parade = resultatParade();
+  if (parade) heroParade(parade);
+  else heroTouche(degats * facteurDegats());
+}
+
+function echo() {
+  const [nom, f] = frameBoss();
+  echos.push({ x: boss.x, dir: boss.dir, nom, f, t0: rt });
+}
+
+function majProjectiles(dt) {
+  for (const p of projectiles) {
+    p.x += p.vx * dt / 1000;
+    if (Math.abs(p.x - hero.x) < S.heroLargeur / 2 + S.orbe.rayon && !invulnerable()) {
+      p.mort = true;
+      const parade = resultatParade();
+      if (parade) heroParade(parade);
+      else heroTouche(S.orbe.degats * facteurDegats());
+    }
+  }
+  projectiles = projectiles.filter(p => !p.mort && p.x > -150 && p.x < S.arenaLargeur + 150);
 }
 
 function majBoss(dt) {
@@ -521,45 +621,85 @@ function majBoss(dt) {
   if (boss.etat === 'ouverture' && boss.t >= boss.duree) entrerMarche();
   if (boss.etat === 'vacille' && boss.t >= S.vacilleMs) entrerMarche();
 
-  if (boss.etat === 'marche') {
-    // Il approche toujours ; un Sort peut partir de loin ou au contact
+  if (boss.etat === 'meta') {
+    if (!boss.metaFait && boss.t >= S.meta.changeMs) {
+      boss.metaFait = true;
+      boss.phase = 2;
+      boss.eteintes = 0;
+      boss.eteintesT = [];
+      flashMeta = rt;
+      eclair = rt;
+      explosionFlammes();
+    }
+    if (boss.t >= S.meta.ms) entrerMarche();
+  } else if (boss.etat === 'bond') {
+    const p = Math.min(1, boss.t / S.bond.ms);
+    boss.x = boss.dash.de + (boss.dash.vers - boss.dash.de) * (1 - (1 - p) * (1 - p));
+    if (boss.t - boss.dash.dernierEcho >= S.ruee.echoMs) { echo(); boss.dash.dernierEcho = boss.t; }
+    if (p >= 1) entrerMarche();
+  } else if (boss.etat === 'marche') {
+    // Il approche toujours ; les attaques à distance partent après un temps de marche, ou au contact
     boss.dir = hero.x >= boss.x ? 1 : -1;
-    const sortileges = boss.prochaine === 'sort' || boss.prochaine === 'pluie';
-    if (ecart() <= S.fauchagePortee || (sortileges && boss.t >= boss.delaiSort)) lancerBoss(boss.prochaine);
-    else boss.x += boss.dir * S.bossVitesse * (phase2() ? S.phase2VitesseFacteur : 1) * dt / 1000;
+    const adistance = ATTAQUES_A_DISTANCE.includes(boss.prochaine);
+    if (ecart() <= S.fauchagePortee || (adistance && boss.t >= boss.delaiSort)) lancerBoss(boss.prochaine);
+    else boss.x += boss.dir * S.bossVitesse * (phase2() ? S.phase2.vitesseFacteur : 1) * dt / 1000;
   } else if (boss.etat === 'fauchage') {
     const temps = tempsFrappes();
     while (boss.frappes < temps.length && boss.t >= temps[boss.frappes]) {
       boss.frappes++;
       jouer('fauchage');
-      const [g, dr] = zoneFauchage();
-      if (chevauche(heroG(), heroD(), g, dr)) {
-        const parade = resultatParade();
-        if (parade) heroParade(parade);
-        else heroTouche(S.fauchageDegats);
-      }
+      coupDuBoss(S.fauchageDegats);
     }
     // Le double Fauchage se retourne vers le héros avant le second coup
-    if (boss.variante === 'double' && !boss.retourne && boss.t >= temps[0] + S.fauchageZoneMs) {
+    if (boss.variante === 'double' && !boss.retourne && boss.t >= temps[phase2() ? 1 : 0] + S.fauchageZoneMs) {
       boss.retourne = true;
       boss.dir = hero.x >= boss.x ? 1 : -1;
     }
     if (boss.t >= temps[temps.length - 1] + S.fauchageZoneMs) ouverture();
+  } else if (boss.etat === 'ruee') {
+    const R = S.ruee, A = R.annonceMs * boss.fa;
+    if (!boss.dash && boss.t >= A) {
+      boss.dir = hero.x >= boss.x ? 1 : -1;
+      const dist = Math.max(0, Math.min(R.distanceMax, Math.abs(hero.x - boss.x) - boss.w / 2 - S.heroLargeur / 2 - R.arret));
+      boss.dash = { de: boss.x, vers: boss.x + boss.dir * dist, t0: boss.t, dernierEcho: -1e9 };
+      jouer('ruee');
+    }
+    if (boss.dash) {
+      const p = Math.min(1, (boss.t - boss.dash.t0) / R.dashMs);
+      boss.x = boss.dash.de + (boss.dash.vers - boss.dash.de) * (1 - (1 - p) * (1 - p));
+      if (p < 1 && boss.t - boss.dash.dernierEcho >= R.echoMs) { echo(); boss.dash.dernierEcho = boss.t; }
+      if (p >= 1 && !boss.applique) {
+        boss.applique = true;
+        jouer('fauchage');
+        coupDuBoss(R.degats);
+      }
+      if (boss.applique && boss.t >= boss.dash.t0 + R.dashMs + S.fauchageZoneMs) ouverture();
+    }
+  } else if (boss.etat === 'orbe') {
+    const O = S.orbe, A = O.annonceMs * boss.fa, nb = phase2() ? O.phase2Nombre : 1;
+    while (boss.tirs < nb && boss.t >= A + boss.tirs * O.ecartMs) {
+      boss.tirs++;
+      projectiles.push({ x: boss.x + boss.dir * (boss.w / 2 + 12), y: S.solY - O.hauteur, vx: boss.dir * O.vitesse * (phase2() ? O.phase2Vitesse : 1), t0: rt });
+      jouer('orbeLancee');
+    }
+    if (boss.tirs >= nb && boss.t >= A + (nb - 1) * O.ecartMs + O.recupMs) ouverture();
   } else if (boss.etat === 'sort') {
-    const nb = boss.variante === 'pluie' ? S.pluieMarques : 1;
-    while (boss.marques.length < nb && boss.t >= S.sortAnnonceMs + boss.marques.length * S.pluieEcartMs) {
-      boss.marques.push({ x: hero.x, t0: S.sortAnnonceMs + boss.marques.length * S.pluieEcartMs, applique: false });
+    const P = S.phase2, pluie = boss.variante === 'pluie';
+    const nb = pluie ? P.pluieMarques : 1, ecartMarques = pluie ? P.pluieEcartMs : 0;
+    const SA = S.sortAnnonceMs * boss.fa, delai = S.sortMarqueMs * (phase2() ? P.sortMarqueFacteur : 1);
+    while (boss.marques.length < nb && boss.t >= SA + boss.marques.length * ecartMarques) {
+      boss.marques.push({ x: hero.x, t0: SA + boss.marques.length * ecartMarques, applique: false, delai });
     }
     for (const m of boss.marques) {
-      if (!m.applique && boss.t >= m.t0 + S.sortMarqueMs) {
+      if (!m.applique && boss.t >= m.t0 + m.delai) {
         m.applique = true;
         eclair = rt;
         jouer('explosion');
-        if (chevauche(heroG(), heroD(), m.x - S.sortRayon, m.x + S.sortRayon)) heroTouche(S.sortDegats);
+        if (chevauche(heroG(), heroD(), m.x - S.sortRayon, m.x + S.sortRayon)) heroTouche(S.sortDegats * facteurDegats());
       }
     }
     const derniere = boss.marques[boss.marques.length - 1];
-    if (boss.marques.length === nb && boss.t >= derniere.t0 + S.sortMarqueMs + S.sortExplosionMs) ouverture();
+    if (boss.marques.length === nb && boss.t >= derniere.t0 + derniere.delai + S.sortExplosionMs) ouverture();
   }
 
   boss.x = Math.max(boss.w / 2, Math.min(S.arenaLargeur - boss.w / 2, boss.x));
@@ -575,6 +715,7 @@ function avancer(dt) {
   }
   majHero(dt);
   if (jeu.etat === 'combat') majBoss(dt);
+  if (jeu.etat === 'combat') majProjectiles(dt);
 }
 
 // ---------- Dessin ----------
@@ -644,6 +785,7 @@ function facteurFlammes() {
   let f = phase2() ? Q.phase2Facteur : 1;
   if (boss.etat === 'vacille') f *= Q.vacilleFacteur;
   if (jeu.etat === 'victoire') f *= Math.max(0, 1 - jeu.t / S.bossMortMs);
+  if (boss.etat === 'meta' && boss.t < S.meta.changeMs) f *= 0.5 + 1.5 * boss.t / S.meta.changeMs;   // les flammes s'emballent
   return f;
 }
 
@@ -663,6 +805,7 @@ function intensiteFlammes() {
 // Points de chaque queue, du dos du boss jusqu'à la flamme
 function geometrieQueues() {
   const Q = S.queues, e = S.echelleSprite, t = rt / 1000;
+  const agit = phase2() ? Q.phase2Ondulation : 1, hzFacteur = phase2() ? Q.phase2OndulationHz : 1;
   const bx = boss.x - boss.dir * Q.baseDx * e, by = S.solY + Q.baseDy * e;
   const queues = [];
   for (let i = 0; i < Q.nombre; i++) {
@@ -672,7 +815,7 @@ function geometrieQueues() {
     const pts = [];
     for (let k = 0; k <= Q.segments; k++) {
       const s = k / Q.segments;
-      const o = Math.sin(t * Math.PI * 2 * Q.ondulationHz - s * 3.2 + i * 1.7) * Q.ondulation * s;
+      const o = Math.sin(t * Math.PI * 2 * Q.ondulationHz * hzFacteur - s * 3.2 + i * 1.7) * Q.ondulation * agit * s;
       pts.push([bx + vx * L * s - vy * o, by + vy * L * s + vx * o]);
     }
     queues.push(pts);
@@ -695,7 +838,7 @@ function dessinerLueurFlamme(x, y, taille) {
 }
 
 function creerSpritesFeu() {
-  spritesFeu = S.queues.feu.couleurs.map(c => {
+  const fabriquer = (couleurs) => couleurs.map(c => {
     const cv = document.createElement('canvas');
     cv.width = cv.height = 64;
     const g = cv.getContext('2d');
@@ -707,6 +850,7 @@ function creerSpritesFeu() {
     g.fillRect(0, 0, 64, 64);
     return cv;
   });
+  spritesFeu = { f1: fabriquer(S.queues.feu.couleurs), f2: fabriquer(S.queues.feu.couleurs2), o: fabriquer(S.orbe.couleurs) };
   spriteFumee = document.createElement('canvas');
   spriteFumee.width = spriteFumee.height = 64;
   const g = spriteFumee.getContext('2d');
@@ -719,7 +863,7 @@ function creerSpritesFeu() {
 
 // Chaque particule passe du cœur blanc au rouge sombre en montant : c'est ce qui fait la flamme
 function dessinerFeux() {
-  const F = S.queues.feu, n = spritesFeu.length;
+  const F = S.queues.feu;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   for (const p of feux) {
@@ -727,7 +871,8 @@ function dessinerFeux() {
     if (a < 0 || a >= 1) continue;
     const s = p.s * (1 - 0.7 * a);
     ctx.globalAlpha = F.alpha * (1 - a * a);
-    ctx.drawImage(spritesFeu[Math.min(n - 1, Math.floor(a * n))], p.x - s, p.y - s * F.etirement, s * 2, s * 2 * F.etirement);
+    const jeuSprites = spritesFeu[p.pal || 'f1'], n = jeuSprites.length;
+    ctx.drawImage(jeuSprites[Math.min(n - 1, Math.floor(a * n))], p.x - s, p.y - s * F.etirement, s * 2, s * 2 * F.etirement);
   }
   ctx.restore();
 }
@@ -781,6 +926,21 @@ function dessinerQueues() {
 }
 
 // ---- Particules, mises à jour à chaque image ----
+// Les cinq flammes jaillissent d'un coup, à la métamorphose
+function explosionFlammes() {
+  const F = S.queues.feu;
+  for (const pts of geometrieQueues()) {
+    const bout = pts[pts.length - 1];
+    for (let k = 0; k < S.meta.explosion; k++) {
+      feux.push({ x: bout[0], y: bout[1], vx: (Math.random() - 0.5) * 240, vy: -60 - Math.random() * 200, t0: rt, vie: 500 + Math.random() * 600,
+        s: 7 + Math.random() * 9, ph: Math.random() * 6.28, pal: 'f2' });
+    }
+    for (let k = 0; k < 10; k++) {
+      fumees.push({ x: bout[0], y: bout[1] - Math.random() * 20, vx: (Math.random() - 0.5) * 60, vy: -S.queues.fumeeMonte * (1 + Math.random()), t0: rt });
+    }
+  }
+}
+
 function majEffets(dt) {
   const Q = S.queues, G = S.signaux, c = S.decor.cendres, b = S.decor.braises;
   const vent = phase2() ? b.vxFacteur : 1, chute = phase2() ? b.vyFacteur : 1;
@@ -801,7 +961,7 @@ function majEffets(dt) {
       for (let reste = F.parSeconde * fi * dt / 1000; reste > 0; reste--) {
         if (Math.random() < Math.min(1, reste) && feux.length < F.max) {
           feux.push({ x: bout[0] + (Math.random() - 0.5) * F.etalement, y: bout[1], vx: (Math.random() - 0.5) * F.derive,
-            vy: -tire(F.montee), t0: rt, vie: tire(F.vie), s: tire(F.taille) * fi, ph: Math.random() * 6.28 });
+            vy: -tire(F.montee), t0: rt, vie: tire(F.vie), s: tire(F.taille) * fi, ph: Math.random() * 6.28, pal: phase2() ? 'f2' : 'f1' });
         }
       }
       if (Math.random() < Q.braisesParSeconde * fi * dt / 1000 && braises.length < Q.braisesMax) {
@@ -811,6 +971,14 @@ function majEffets(dt) {
         fumees.push({ x: bout[0], y: bout[1] - Q.flamme.taille * fi * 0.9, vx: (Math.random() - 0.3) * 14, vy: -Q.fumeeMonte * (0.6 + Math.random() * 0.6), t0: rt });
       }
     });
+  }
+  for (const p of projectiles) {
+    for (let reste = S.orbe.particulesParSeconde * dt / 1000; reste > 0; reste--) {
+      if (Math.random() < Math.min(1, reste) && feux.length < F.max) {
+        feux.push({ x: p.x + (Math.random() - 0.5) * 8, y: p.y + (Math.random() - 0.5) * 8, vx: -p.vx * 0.08 + (Math.random() - 0.5) * 40,
+          vy: (Math.random() - 0.5) * 60, t0: rt, vie: 260 + Math.random() * 260, s: 5 + Math.random() * 6, ph: Math.random() * 6.28, pal: 'o' });
+      }
+    }
   }
   feux = feux.filter(p => rt - p.t0 < p.vie);
   for (const p of feux) {
@@ -1192,6 +1360,11 @@ function dessinerAtmosphere() {
     ctx.fillStyle = `rgba(150,15,0,${S.decor.phase2.rougeAlpha})`;
     ctx.fillRect(0, 0, W, H);
   }
+  const fm = (rt - flashMeta) / S.meta.flashMs;
+  if (fm >= 0 && fm < 1) {
+    ctx.fillStyle = `rgba(255,244,230,${1 - fm})`;
+    ctx.fillRect(0, 0, W, H);
+  }
   const E = S.decor.eclair, ea = (rt - eclair) / E.ms;
   if (ea >= 0 && ea < 1) {
     ctx.fillStyle = `rgba(${E.couleur},${E.alpha * (1 - ea)})`;
@@ -1215,7 +1388,9 @@ function barre(x, y, largeur, part, couleur) {
 
 // ---------- Sprites ----------
 const noms = ['heros-attente', 'heros-course', 'heros-esquive', 'heros-attaque1', 'heros-attaque2', 'heros-touche', 'heros-mort',
-  'boss-attente', 'boss-marche', 'boss-fauchage', 'boss-incantation', 'boss-sort', 'boss-touche', 'boss-mort'];
+  'boss-attente', 'boss-marche', 'boss-fauchage', 'boss-incantation', 'boss-sort', 'boss-touche', 'boss-mort',
+  'boss2-attente', 'boss2-marche', 'boss2-fauchage', 'boss2-incantation', 'boss2-touche', 'boss2-mort',
+  'fx-parade-parfaite', 'fx-parade-simple', 'fx-degat-heros', 'fx-degat-boss', 'fx-bloque'];
 const images = {};
 let chargees = 0;
 for (const nom of noms) {
@@ -1229,7 +1404,7 @@ const pret = () => chargees === noms.length;
 // Image et nombre de vignettes d'une planche
 function anim(nom) {
   const im = images[nom];
-  const fl = nom.startsWith('heros') ? S.heroSprite.largeur : S.bossSprite.largeur;
+  const fl = nom.startsWith('heros') ? S.heroSprite.largeur : nom.startsWith('fx') ? S.fxSprite.largeur : S.bossSprite.largeur;
   return [im, Math.round(im.width / fl)];
 }
 const boucle_ = (n) => Math.floor(gt * S.animFps / 1000) % n;
@@ -1248,34 +1423,46 @@ function frameHero() {
   return [nom, boucle_(nbFrames(nom))];
 }
 
+// Planches du boss : la phase 2 a les siennes (fourrure roussie, deux lames)
+function prefixeBoss() {
+  return boss.phase === 2 && !(boss.etat === 'meta' && boss.t < S.meta.changeMs) ? 'boss2' : 'boss';
+}
+
 function frameBoss() {
-  if (jeu.etat === 'victoire') return ['boss-mort', part(jeu.t, S.bossMortMs, nbFrames('boss-mort'))];
-  if (boss.etat === 'vacille') return ['boss-touche', boucle_(nbFrames('boss-touche'))];
+  const pre = prefixeBoss();
+  const nom = (n) => pre + '-' + n;
+  const imp = S.fauchageFrameImpact, Z = S.fauchageZoneMs;
+  if (jeu.etat === 'victoire') return [nom('mort'), part(jeu.t, S.bossMortMs, nbFrames(nom('mort')))];
+  if (boss.etat === 'meta') {
+    if (boss.t < S.meta.changeMs) return [nom('touche'), boucle_(nbFrames(nom('touche')))];
+    return [nom('incantation'), part(boss.t - S.meta.changeMs, S.meta.ms - S.meta.changeMs, nbFrames(nom('incantation')))];
+  }
+  if (boss.etat === 'vacille') return [nom('touche'), boucle_(nbFrames(nom('touche')))];
   if (boss.etat === 'fauchage') {
-    const n = nbFrames('boss-fauchage'), imp = S.fauchageFrameImpact, A = S.fauchageAnnonceMs, Z = S.fauchageZoneMs, t = boss.t;
-    const coup = (debut) => imp + part(t - debut, Z, n - imp);
-    if (boss.variante === 'retarde') {
-      if (t < A) return ['boss-fauchage', part(t, A, imp)];
-      if (t < S.fauchageRetardeMs) return ['boss-fauchage', imp - 1]; // l'élan est tenu
-      return ['boss-fauchage', coup(S.fauchageRetardeMs)];
+    const n = nbFrames(nom('fauchage')), T = tempsFrappes(), t = boss.t;
+    let k = -1;
+    for (let i = 0; i < T.length; i++) if (t >= T[i]) k = i;
+    if (k >= 0 && t < T[k] + Z) return [nom('fauchage'), imp + part(t - T[k], Z, n - imp)];   // le coup
+    if (k + 1 < T.length) {                                                                      // l'élan, ou l'élan tenu
+      const debut = k >= 0 ? T[k] + Z : 0;
+      const duree = k < 0 && boss.variante === 'retarde' ? S.fauchageAnnonceMs * boss.fa : T[k + 1] - debut;
+      const local = t - debut;
+      return [nom('fauchage'), local >= duree ? imp - 1 : part(local, duree, imp)];
     }
-    if (boss.variante === 'double') {
-      const s2 = A + S.doubleDelaiMs;
-      if (t < A) return ['boss-fauchage', part(t, A, imp)];
-      if (t < A + Z) return ['boss-fauchage', coup(A)];
-      if (t < s2) return ['boss-fauchage', part(t - A - Z, s2 - A - Z, imp)]; // second élan
-      return ['boss-fauchage', coup(s2)];
-    }
-    if (t < A) return ['boss-fauchage', part(t, A, imp)];
-    return ['boss-fauchage', coup(A)];
+    return [nom('fauchage'), n - 1];
   }
-  if (boss.etat === 'sort') {
-    const n = nbFrames('boss-incantation');
-    return ['boss-incantation', part(boss.t, S.sortAnnonceMs, n)];
+  if (boss.etat === 'ruee') {
+    const n = nbFrames(nom('fauchage')), R = S.ruee;
+    if (!boss.dash) return [nom('fauchage'), part(boss.t, R.annonceMs * boss.fa, imp - 1)];   // il se ramasse, lames en arrière
+    const fin = boss.dash.t0 + R.dashMs;
+    if (boss.t < fin) return [nom('fauchage'), imp + 1];                                        // la fente, buste penché
+    return [nom('fauchage'), imp + part(boss.t - fin, Z, n - imp)];
   }
-  if (gt - boss.flash < S.bossFlashMs) return ['boss-touche', part(gt - boss.flash, S.bossFlashMs, nbFrames('boss-touche'))];
-  if (boss.etat === 'marche') return ['boss-marche', boucle_(nbFrames('boss-marche'))];
-  return ['boss-attente', boucle_(nbFrames('boss-attente'))];
+  if (boss.etat === 'orbe') return [nom('incantation'), part(boss.t, S.orbe.annonceMs * boss.fa, nbFrames(nom('incantation')))];
+  if (boss.etat === 'sort') return [nom('incantation'), part(boss.t, S.sortAnnonceMs * boss.fa, nbFrames(nom('incantation')))];
+  if (gt - boss.flash < S.bossFlashMs) return [nom('touche'), part(gt - boss.flash, S.bossFlashMs, nbFrames(nom('touche')))];
+  if (boss.etat === 'marche' || boss.etat === 'bond') return [nom('marche'), boucle_(nbFrames(nom('marche')))];
+  return [nom('attente'), boucle_(nbFrames(nom('attente')))];
 }
 
 // Dessine la vignette f d'une planche, les pieds posés sur le sol
@@ -1288,10 +1475,11 @@ function dessinerSprite(im, f, x, miroir, sp, pivotX = sp.pivotX) {
   ctx.restore();
 }
 
-// La faux luit en blanc pendant l'élan tenu du Fauchage retardé
+// Les lames luisent en blanc pendant l'élan tenu du Fauchage retardé
 function dessinerLueur() {
   if (boss.etat !== 'fauchage' || boss.variante !== 'retarde') return;
-  if (boss.t < S.fauchageAnnonceMs || boss.t >= S.fauchageRetardeMs) return;
+  const A = S.fauchageAnnonceMs * boss.fa, R = S.fauchageRetardeMs * boss.fa;
+  if (boss.t < A || boss.t >= R) return;
   const l = S.lueurFaux, e = S.echelleSprite;
   const x = boss.x - boss.dir * l.dx * e, y = S.solY + l.dy * e;
   const pulse = 0.6 + 0.4 * Math.sin(boss.t / 1000 * Math.PI * 2 * l.pulseHz);
@@ -1302,16 +1490,31 @@ function dessinerLueur() {
   ctx.fillRect(x - l.rayon, y - l.rayon, l.rayon * 2, l.rayon * 2);
 }
 
-// Arc clair qui suit la faux pendant la frappe du Fauchage
+// Le coup affiché en ce moment : { debut, k } (k : numéro du coup, la seconde lame frappe en sens inverse)
+function frappeCourante() {
+  const Z = S.fauchageZoneMs;
+  if (boss.etat === 'fauchage') {
+    const T = tempsFrappes();
+    let k = -1;
+    for (let i = 0; i < T.length; i++) if (boss.t >= T[i]) k = i;
+    if (k >= 0 && boss.t < T[k] + Z) return { debut: T[k], k };
+  } else if (boss.etat === 'ruee' && boss.dash) {
+    const s = boss.dash.t0 + S.ruee.dashMs;
+    if (boss.t >= s && boss.t < s + Z) return { debut: s, k: 0 };
+  }
+  return null;
+}
+
+// Arc clair qui suit la lame pendant le coup
 function dessinerArc() {
-  if (boss.etat !== 'fauchage') return;
-  const temps = tempsFrappes();
-  const debut = temps.filter(x => boss.t >= x).pop();
-  if (debut === undefined || boss.t >= debut + S.fauchageZoneMs) return;
-  const p = Math.min(1, (boss.t - debut) / S.fauchageZoneMs);
+  const frappe = frappeCourante();
+  if (!frappe) return;
+  const p = Math.min(1, (boss.t - frappe.debut) / S.fauchageZoneMs);
   const rad = Math.PI / 180;
-  const tete = S.arcDebutDeg + (S.arcFinDeg - S.arcDebutDeg) * p;
-  const queue = Math.max(S.arcDebutDeg, tete - S.arcQueueDeg);
+  const sens = frappe.k % 2 ? -1 : 1;                 // la seconde lame balaie de bas en haut
+  const debutA = sens > 0 ? S.arcDebutDeg : S.arcFinDeg, finA = sens > 0 ? S.arcFinDeg : S.arcDebutDeg;
+  const tete = debutA + (finA - debutA) * p;
+  const queue = sens > 0 ? Math.max(debutA, tete - S.arcQueueDeg) : Math.min(debutA, tete + S.arcQueueDeg);
   const cx = boss.x, cy = S.solY - S.arcCentreHauteur;
   const rayon = S.fauchagePortee + boss.w / 2;
   ctx.save();
@@ -1337,7 +1540,7 @@ function dessinerArc() {
 // Cercle de runes au sol, qui pulse de plus en plus vite jusqu'à l'explosion
 function dessinerRunes(m) {
   const t = boss.t - m.t0;
-  const frac = Math.min(1, t / S.sortMarqueMs);
+  const frac = Math.min(1, t / m.delai);
   const explose = m.applique;
   const pulse = explose ? 1 : 0.5 + 0.5 * Math.sin(t / 1000 * Math.PI * 2 * (S.runesPulseHz + S.runesPulseAccel * frac));
   const rx = S.sortRayon * (1 + 0.06 * pulse), ry = rx * S.runesAplat;
@@ -1373,6 +1576,60 @@ function dessinerRunes(m) {
     ctx.stroke();
   }
   ctx.restore();
+}
+
+// Images rémanentes du boss pendant ses fentes
+function dessinerEchos() {
+  echos = echos.filter(e => rt - e.t0 < S.ruee.echoVieMs);
+  for (const e of echos) {
+    ctx.globalAlpha = S.ruee.echoAlpha * (1 - (rt - e.t0) / S.ruee.echoVieMs);
+    dessinerSprite(images[e.nom], e.f, e.x, e.dir > 0, S.bossSprite);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Orbes magiques : un noyau clair dans un halo violet, la traînée vient des particules
+function dessinerProjectiles() {
+  const O = S.orbe;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of projectiles) {
+    const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, O.halo);
+    g.addColorStop(0, 'rgba(190,150,255,0.55)');
+    g.addColorStop(1, 'rgba(90,40,200,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(p.x - O.halo, p.y - O.halo, O.halo * 2, O.halo * 2);
+    ctx.fillStyle = 'rgba(240,230,255,0.95)';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, O.rayon * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Sprites d'impact : une image toutes les S.fx.imageMs, pour un rendu saccadé
+function dessinerFx() {
+  fxListe = fxListe.filter(f => {
+    const [, n] = anim(f.nom);
+    return Math.floor((rt - f.t0) / S.fx.imageMs) < n;
+  });
+  const e = S.fx.echelle, sp = S.fxSprite;
+  for (const f of fxListe) {
+    const [im, n] = anim(f.nom);
+    const i = Math.min(n - 1, Math.floor((rt - f.t0) / S.fx.imageMs));
+    ctx.save();
+    ctx.translate(f.x, f.y);
+    if (f.miroir) ctx.scale(-1, 1);
+    ctx.drawImage(im, i * sp.largeur, 0, sp.largeur, sp.hauteur, -sp.largeur * e / 2, -sp.hauteur * e / 2, sp.largeur * e, sp.hauteur * e);
+    ctx.restore();
+  }
+}
+
+function respiration() {
+  if (jeu.etat === 'victoire') return { dy: 0, ey: 1 };
+  const R = S.respiration, p2 = phase2();
+  const s = Math.sin(rt / 1000 * Math.PI * 2 * (p2 ? R.hz2 : R.hz));
+  return { dy: -(p2 ? R.amplitude2 : R.amplitude) * (0.5 + 0.5 * s), ey: 1 + R.ecrasement * s };
 }
 
 function texteCentre(texte, taille) {
@@ -1416,15 +1673,22 @@ function dessiner() {
 
   for (const m of boss.marques) {
     dessinerRunes(m);
-    const total = S.sortMarqueMs + S.sortExplosionMs;
+    const total = m.delai + S.sortExplosionMs;
     const [im, n] = anim('boss-sort');
     const f = Math.max(0, Math.min(n - 1, Math.floor((boss.t - m.t0) / total * n)));
     dessinerSprite(im, f, m.x, false, S.bossSprite, S.sortPivotX);
   }
 
+  dessinerEchos();
   dessinerQueues();
   const [nomB, fb] = frameBoss();
+  const rp = respiration();
+  ctx.save();
+  ctx.translate(boss.x, S.solY + rp.dy);
+  ctx.scale(1, rp.ey);
+  ctx.translate(-boss.x, -S.solY);
   dessinerSprite(images[nomB], fb, boss.x, boss.dir > 0, S.bossSprite);
+  ctx.restore();
   dessinerLueur();
   dessinerArc();
 
@@ -1440,6 +1704,8 @@ function dessiner() {
   ctx.restore();
   ctx.globalAlpha = 1;
 
+  dessinerProjectiles();
+  dessinerFx();
   dessinerParticulesMonde();
   dessinerBrume(true);
   dessinerPremierPlan(cx);
@@ -1462,7 +1728,7 @@ function dessiner() {
   ctx.fillText(S.bossNom, bx, by - S.barreEspace / 2);
   barre(bx, by, S.bossBarreLargeur, boss.vie / S.bossVie, '#a33');
   ctx.fillStyle = '#000';
-  for (let i = 1; i < S.queues.nombre; i++) ctx.fillRect(bx + S.bossBarreLargeur * i / S.queues.nombre - 1.5, by, 3, S.barreHauteur);
+  ctx.fillRect(bx + S.bossBarreLargeur * (1 - S.phase1Part) - 1.5, by - 4, 3, S.barreHauteur + 8);
   ctx.fillStyle = S.postureCouleur;
   ctx.fillRect(bx, by + S.barreHauteur + S.barreEspace / 2, S.bossBarreLargeur * Math.min(1, boss.posture / S.postureMax), S.postureHauteur);
 

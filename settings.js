@@ -1,7 +1,7 @@
 // Fichier de réglages : toutes les valeurs chiffrées du jeu vivent ici.
 // Les valeurs des lots suivants s'y ajoutent au fil des lots.
 const SETTINGS = {
-  version: 5,                 // change à chaque mise à jour des images, pour que le téléphone les recharge
+  version: 6,                 // change à chaque mise à jour des images, pour que le téléphone les recharge
   fps: 60,
   dtMaxMs: 100,               // plus long pas de temps accepté entre deux images
 
@@ -64,11 +64,10 @@ const SETTINGS = {
   // Variantes d'attaque et choix du boss (lot 7)
   fauchageRetardeMs: 1100,    // élan tenu avant le coup du Fauchage retardé
   doubleDelaiMs: 450,         // délai entre les deux coups du double Fauchage
-  pluieMarques: 3,            // marques de la Pluie de sorts
-  pluieEcartMs: 350,          // écart entre deux marques
   sortLoinMinMs: 600,         // marche avant de lancer un Sort de loin, au plus court
   sortLoinMaxMs: 1800,        // et au plus long
-  poids: { fauchage: 4, retarde: 2, double: 2, sort: 2, pluie: 2 }, // la Pluie ne sort qu'en phase 2
+  poids: { fauchage: 4, retarde: 2, double: 2, sort: 2, pluie: 0, orbe: 2, ruee: 2 },   // phase 1
+  poids2: { fauchage: 3, retarde: 2, double: 3, sort: 1, pluie: 3, orbe: 3, ruee: 3 },  // phase 2
   repetitionMax: 2,           // jamais plus de deux fois la même attaque de suite
   lueurFaux: { dx: 23, dy: -56, rayon: 45, alpha: 0.9, pulseHz: 6 }, // lueur du Fauchage retardé
 
@@ -84,9 +83,34 @@ const SETTINGS = {
   postureCouleur: '#e0c060',
 
   // Phase 2 (lot 3)
-  phase2Seuil: 0.5,           // part de vie du boss sous laquelle la phase 2 commence
-  phase2VitesseFacteur: 1.3,  // marche 30 % plus vite
-  phase2OuvertureMs: 500,     // ouverture après chaque série
+  // Les deux phases : chacune demande de parer cinq coups (cinq flammes) avant de pouvoir blesser le boss.
+  phase1Part: 0.5,            // part de la vie que fait perdre la phase 1
+  phase2: {                   // la phase 2 est bien plus dure
+    vitesseFacteur: 1.7,      // marche
+    annonceFacteur: 0.6,      // durée des élans : le boss annonce ses coups plus vite
+    ouvertureMs: 350,         // ouverture après chaque attaque
+    secondeLameMs: 140,       // la seconde lame frappe juste après la première
+    degatsFacteur: 1.5,
+    sortMarqueFacteur: 0.8,   // les marques explosent plus vite
+    pluieMarques: 5,          // marques de la Pluie de sorts
+    pluieEcartMs: 250,
+  },
+
+  // Ruée : le boss se ramasse, fonce sur le héros et frappe à l'arrivée (ça se pare)
+  ruee: { annonceMs: 520, dashMs: 240, distanceMax: 420, arret: 70, degats: 40, echoMs: 38, echoVieMs: 280, echoAlpha: 0.4 },
+  // Bond : le boss recule d'un trait quand le héros est collé à lui
+  bond: { seuilEcart: 70, chance: 0.3, chance2: 0.5, distance: 200, ms: 230 },
+  // Orbe : attaque magique, un projectile qu'on esquive ou qu'on pare
+  orbe: { annonceMs: 700, vitesse: 380, phase2Vitesse: 1.3, degats: 30, rayon: 14, hauteur: 46, phase2Nombre: 3, ecartMs: 260, recupMs: 350,
+          particulesParSeconde: 130, couleurs: ['235,225,255', '170,130,255', '100,60,210', '40,20,100'], halo: 46 },
+  // Métamorphose : le boss se transforme à la moitié de sa vie
+  meta: { ms: 3400, changeMs: 1500, tremblementPx: 7, arretMs: 140, flashMs: 500, explosion: 46 },
+  // Respiration du boss, pour qu'il ne soit jamais immobile
+  respiration: { hz: 0.9, amplitude: 1.8, ecrasement: 0.012, hz2: 1.5, amplitude2: 3 },
+
+  // Sprites d'impact (planches de 64 x 64), joués image par image
+  fxSprite: { largeur: 64, hauteur: 64 },
+  fx: { echelle: 2.2, imageMs: 70 },
 
   // Coup reçu par le héros (lot 2)
   coupRecuMs: 300,            // héros sans contrôle
@@ -227,10 +251,13 @@ const SETTINGS = {
       alpha: 0.42,
       etirement: 1.8,         // les particules sont étirées vers le haut
       couleurs: ['255,196,110', '255,126,30', '210,50,14', '90,18,8'],  // du cœur blanc à la cendre rouge
+      couleurs2: ['255,214,130', '255,140,40', '236,64,18', '130,22,10'], // phase 2 : le feu blanchit
     },
     eteinteMs: 450,           // temps que met une flamme à mourir
     fumeeEteinte: 22,         // bouffées de fumée quand une flamme s'éteint
-    phase2Facteur: 1.4,       // flammes plus grandes en phase 2
+    phase2Facteur: 1.25,      // flammes plus grandes en phase 2
+    phase2Ondulation: 1.5,    // et queues plus agitées
+    phase2OndulationHz: 1.4,
     vacilleFacteur: 0.55,     // et plus faibles quand il vacille
     braisesParSeconde: 5,     // par queue
     braiseVie: 900,           // ms
@@ -352,6 +379,30 @@ const SETTINGS = {
     coupBloque: [
       { forme: 'square', f0: 980, f1: 700, duree: 0.07, volume: 0.2 },
       { bruit: true, filtre: 'highpass', hz: 3000, duree: 0.06, volume: 0.32 },
+    ],
+    annonceRuee: [
+      { forme: 'sawtooth', f0: 70, f1: 210, duree: 0.5, volume: 0.25 },
+      { bruit: true, filtre: 'lowpass', hz: 420, duree: 0.5, volume: 0.22 },
+    ],
+    ruee: [
+      { bruit: true, filtre: 'bandpass', hz: 800, duree: 0.28, volume: 0.55 },
+      { forme: 'sine', f0: 230, f1: 60, duree: 0.28, volume: 0.45 },
+    ],
+    bond: [{ bruit: true, filtre: 'highpass', hz: 1800, duree: 0.16, volume: 0.32 }],
+    annonceOrbe: [
+      { forme: 'triangle', f0: 200, f1: 520, duree: 0.7, volume: 0.22 },
+      { forme: 'sine', f0: 206, f1: 534, duree: 0.7, volume: 0.2 },
+    ],
+    orbeLancee: [
+      { bruit: true, filtre: 'bandpass', hz: 1400, duree: 0.3, volume: 0.42 },
+      { forme: 'sine', f0: 320, f1: 120, duree: 0.3, volume: 0.35 },
+    ],
+    metamorphose: [
+      { forme: 'sine', f0: 55, f1: 28, duree: 2.4, volume: 0.9 },
+      { bruit: true, filtre: 'lowpass', hz: 600, duree: 2.2, volume: 0.5 },
+      { forme: 'sawtooth', f0: 90, f1: 220, duree: 1.6, volume: 0.22 },
+      { forme: 'sine', f0: 70, f1: 24, duree: 0.9, volume: 0.95, retard: 1.5 },
+      { bruit: true, filtre: 'highpass', hz: 1500, duree: 0.7, volume: 0.5, retard: 1.5 },
     ],
     mort: [{ forme: 'sine', f0: 80, f1: 25, duree: 1.0, volume: 0.5 }],
     victoire: [
