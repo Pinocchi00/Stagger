@@ -12,30 +12,6 @@
 <body>
 <canvas id="jeu"></canvas>
 <script src="settings.js"></script>
-<script>
-(() => {
-  const canvas = document.getElementById('jeu');
-  const ctx = canvas.getContext('2d');
-
-  function ajuster() {
-    const d = window.devicePixelRatio || 1;
-    canvas.width = Math.round(window.innerWidth * d);
-    canvas.height = Math.round(window.innerHeight * d);
-  }
-  window.addEventListener('resize', ajuster);
-  ajuster();
-
-  const pas = 1000 / SETTINGS.fps;
-  let dernier = 0;
-  function boucle(now) {
-    requestAnimationFrame(boucle);
-    if (now - dernier < pas - 1) return;
-    dernier = now;
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
-  requestAnimationFrame(boucle);
-})();
-</script>
+<script src="jeu.js"></script>
 </body>
 </html>

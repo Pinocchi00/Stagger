@@ -27,7 +27,7 @@ Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer, Ma
 ## État des lots
 
 - [x] 0. Mise en place
-- [ ] 1. Le héros
+- [x] 1. Le héros
 - [ ] 2. Le boss
 - [ ] 3. Phase 2 et réglage
 - [ ] 4. Les sprites
