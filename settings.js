@@ -99,4 +99,60 @@ const SETTINGS = {
   bossBarreBas: 44,           // distance entre la barre du boss et le bas de l'écran
   texteTaille: 48,
   nomTaille: 18,
+
+  // Fond (lot 5) : plans sombres du plus lointain au plus proche
+  fond: {
+    graine: 7,
+    margeParallaxe: 200,
+    cielHaut: '#07070a',
+    cielBas: '#16141a',
+    sol: '#1b1b21',
+    plans: [
+      { type: 'pics', parallaxe: 0.02, couleur: '#121218', largeurMin: 180, largeurMax: 380, hauteurMin: 160, hauteurMax: 340, espaceMax: 60 },
+      { type: 'colonnes', parallaxe: 0.05, couleur: '#0e0e13', largeurMin: 40, largeurMax: 90, hauteurMin: 120, hauteurMax: 300, espaceMax: 220, cassureRatio: 0.18 },
+      { type: 'colonnes', parallaxe: 0.1, couleur: '#08080b', largeurMin: 60, largeurMax: 120, hauteurMin: 200, hauteurMax: 420, espaceMax: 480, cassureRatio: 0.12 },
+    ],
+  },
+
+  // Impacts (lot 5)
+  arretCoupDonneMs: 50,       // arrêt sur image quand le héros touche le boss
+  arretCoupRecuMs: 90,        // arrêt sur image quand le héros est touché
+  tremblementCoupDonneMs: 120,
+  tremblementCoupDonnePx: 5,
+  tremblementCoupRecuMs: 260,
+  tremblementCoupRecuPx: 16,
+
+  // Sons produits par le code (lot 5) : oscillateur { forme, f0, f1 } ou bruit filtré { bruit, hz, filtre }
+  sonVolume: 0.5,
+  sons: {
+    attaque: [{ bruit: true, filtre: 'highpass', hz: 2500, duree: 0.12, volume: 0.18 }],
+    roulade: [{ bruit: true, filtre: 'lowpass', hz: 700, duree: 0.25, volume: 0.2 }],
+    coupDonne: [
+      { forme: 'square', f0: 260, f1: 90, duree: 0.1, volume: 0.25 },
+      { bruit: true, filtre: 'lowpass', hz: 2200, duree: 0.08, volume: 0.25 },
+    ],
+    coupRecu: [
+      { forme: 'sine', f0: 110, f1: 40, duree: 0.3, volume: 0.6 },
+      { bruit: true, filtre: 'lowpass', hz: 500, duree: 0.3, volume: 0.35 },
+    ],
+    annonceFauchage: [{ forme: 'sawtooth', f0: 180, f1: 420, duree: 0.55, volume: 0.1 }],
+    annonceSort: [
+      { forme: 'sine', f0: 140, f1: 300, duree: 0.8, volume: 0.2 },
+      { forme: 'sine', f0: 146, f1: 310, duree: 0.8, volume: 0.2 },
+    ],
+    fauchage: [
+      { bruit: true, filtre: 'bandpass', hz: 1200, duree: 0.2, volume: 0.4 },
+      { forme: 'sawtooth', f0: 500, f1: 120, duree: 0.2, volume: 0.15 },
+    ],
+    explosion: [
+      { forme: 'sine', f0: 90, f1: 30, duree: 0.5, volume: 0.6 },
+      { bruit: true, filtre: 'lowpass', hz: 900, duree: 0.45, volume: 0.45 },
+    ],
+    mort: [{ forme: 'sine', f0: 80, f1: 25, duree: 1.0, volume: 0.5 }],
+    victoire: [
+      { forme: 'sine', f0: 220, duree: 1.2, volume: 0.25 },
+      { forme: 'sine', f0: 330, duree: 1.2, volume: 0.2, retard: 0.15 },
+      { forme: 'sine', f0: 440, duree: 1.2, volume: 0.2, retard: 0.3 },
+    ],
+  },
 };

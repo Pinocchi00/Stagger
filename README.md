@@ -31,7 +31,7 @@ Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer, Ma
 - [x] 2. Le boss
 - [x] 3. Phase 2 et réglage
 - [x] 4. Les sprites
-- [ ] 5. Décor, effets et son
+- [x] 5. Décor, effets et son
 
 ## Règles du projet
 
