@@ -33,7 +33,7 @@ const SETTINGS = {
   attaqueMs: 350,
   attaqueDegats: 10,
   attaque2Degats: 14,
-  attaquePorteeLargeurs: 1.5, // en largeurs de héros
+  attaquePortee: 90,          // devant le héros, depuis son bord
   attaqueImpactRatio: 0.5,    // moment du coup dans l'attaque, en part de sa durée
   enchainementMs: 300,        // temps après une attaque pour enchaîner la deuxième
 
@@ -45,13 +45,12 @@ const SETTINGS = {
   bossVitesse: 120,           // marche, unités par seconde
   bossDebutMs: 1000,          // immobilité au début du combat
   bossOuvertureMs: 800,       // immobilité après chaque attaque : l'ouverture
-  bossDistanceSort: 400,      // au-delà de cet écart, il lance le Sort
   bossFlashMs: 120,           // éclat quand il est touché
 
   // Fauchage (lot 2)
   fauchageAnnonceMs: 600,
   fauchageDegats: 35,
-  fauchagePortee: 220,        // zone frappée devant lui, depuis son bord
+  fauchagePortee: 150,        // zone frappée devant lui, depuis son bord
   fauchageZoneMs: 150,        // durée d'affichage de la zone rouge
 
   // Sort (lot 2)
@@ -61,11 +60,31 @@ const SETTINGS = {
   sortRayon: 90,              // demi-largeur de la marque au sol
   sortExplosionMs: 150,       // durée d'affichage de l'explosion
 
+  // Variantes d'attaque et choix du boss (lot 7)
+  fauchageRetardeMs: 1100,    // élan tenu avant le coup du Fauchage retardé
+  doubleDelaiMs: 450,         // délai entre les deux coups du double Fauchage
+  pluieMarques: 3,            // marques de la Pluie de sorts
+  pluieEcartMs: 350,          // écart entre deux marques
+  sortLoinMinMs: 600,         // marche avant de lancer un Sort de loin, au plus court
+  sortLoinMaxMs: 1800,        // et au plus long
+  poids: { fauchage: 4, retarde: 2, double: 2, sort: 2, pluie: 2 }, // la Pluie ne sort qu'en phase 2
+  repetitionMax: 2,           // jamais plus de deux fois la même attaque de suite
+  lueurFaux: { dx: 23, dy: -56, rayon: 45, alpha: 0.9, pulseHz: 6 }, // lueur du Fauchage retardé
+
+  // Posture et vacillement (lot 7)
+  postureMax: 6,              // crans avant que le boss vacille
+  postureCoup: 1,             // cran par coup du héros
+  postureCoup2: 1.5,          // cran pour le second coup d'un enchaînement
+  postureDelaiMs: 2000,       // sans coup avant que la posture se vide
+  postureVidageParSeconde: 1,
+  vacilleMs: 2000,            // le boss reste sans défense
+  vacilleDegatsFacteur: 1.5,  // dégâts subis pendant le vacillement
+  postureHauteur: 4,          // trait fin sous la barre de vie
+  postureCouleur: '#e0c060',
+
   // Phase 2 (lot 3)
   phase2Seuil: 0.5,           // part de vie du boss sous laquelle la phase 2 commence
   phase2VitesseFacteur: 1.3,  // marche 30 % plus vite
-  phase2Sorts: 3,             // Sorts lancés à la suite
-  phase2FauchageChance: 0.3,  // chance d'un Fauchage juste après la série de Sorts
   phase2OuvertureMs: 500,     // ouverture après chaque série
 
   // Coup reçu par le héros (lot 2)

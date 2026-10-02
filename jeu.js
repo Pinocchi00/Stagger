@@ -78,13 +78,18 @@ function recommencer() {
     x: S.heroDepartX + S.bossDepartEcart,
     dir: -1,
     vie: S.bossVie,
-    etat: 'ouverture',    // marche, fauchage, sort, ouverture
-    attaque: 'debut',
-    t: 0,
+    etat: 'ouverture',    // marche, fauchage, sort, ouverture, vacille
+    t: 0,                 // temps passé dans l'état, ms
     duree: S.bossDebutMs, // durée de l'ouverture en cours
-    applique: false,      // les dégâts de l'attaque en cours ont-ils été infligés
-    marque: null,         // marque du Sort : { x, t0 }
-    sortsRestants: 0,     // Sorts à enchaîner après celui en cours (phase 2)
+    variante: null,       // fauchage : normal, retarde, double. sort : sort, pluie
+    prochaine: null,      // attaque choisie pendant la marche
+    delaiSort: 0,         // marche avant de lancer un Sort de loin
+    frappes: 0,           // coups du Fauchage déjà portés
+    retourne: false,      // le double Fauchage s'est-il retourné vers le héros
+    marques: [],          // marques du Sort : { x, t0, applique }
+    historique: [],       // dernières attaques lancées
+    posture: 0,           // en crans
+    dernierCoup: -1e9,
     flash: -1e9,
   });
   jeu.etat = 'combat';
@@ -291,12 +296,18 @@ function sortirDuBoss() {
 }
 
 function frapperBoss() {
-  const portee = S.attaquePorteeLargeurs * S.heroLargeur;
   const depart = hero.x + hero.dir * S.heroLargeur / 2;
-  const fin = depart + hero.dir * portee;
+  const fin = depart + hero.dir * S.attaquePortee;
   if (!chevauche(Math.min(depart, fin), Math.max(depart, fin), boss.x - boss.w / 2, boss.x + boss.w / 2)) return;
-  boss.vie = Math.max(0, boss.vie - (hero.attaqueN === 2 ? S.attaque2Degats : S.attaqueDegats));
+  const vacille = boss.etat === 'vacille';
+  const degats = (hero.attaqueN === 2 ? S.attaque2Degats : S.attaqueDegats) * (vacille ? S.vacilleDegatsFacteur : 1);
+  boss.vie = Math.max(0, boss.vie - degats);
   boss.flash = gt;
+  boss.dernierCoup = gt;
+  if (!vacille) {
+    boss.posture += hero.attaqueN === 2 ? S.postureCoup2 : S.postureCoup;
+    if (boss.posture >= S.postureMax) vaciller();
+  }
   impact(S.arretCoupDonneMs, S.tremblementCoupDonneMs, S.tremblementCoupDonnePx);
   jouer('coupDonne');
   if (boss.vie <= 0) { jeu.etat = 'victoire'; jeu.t = 0; jouer('victoire'); }
@@ -339,19 +350,57 @@ const ecart = () => Math.abs(hero.x - boss.x) - boss.w / 2 - S.heroLargeur / 2;
 
 const phase2 = () => boss.vie <= S.bossVie * S.phase2Seuil;
 
-function lancerBoss(etat) {
-  jouer(etat === 'sort' ? 'annonceSort' : 'annonceFauchage');
-  boss.etat = etat;
-  boss.attaque = etat;
+// Tirage au hasard pondéré, jamais plus de S.repetitionMax fois la même attaque de suite
+function choisirAttaque() {
+  const h = boss.historique;
+  const repete = h.length >= S.repetitionMax && h.slice(-S.repetitionMax).every(n => n === h[h.length - 1]) ? h[h.length - 1] : null;
+  const choix = Object.keys(S.poids).filter(n => n !== repete && (n !== 'pluie' || phase2()));
+  let tirage = Math.random() * choix.reduce((somme, n) => somme + S.poids[n], 0);
+  let nom = choix[choix.length - 1];
+  for (const n of choix) { tirage -= S.poids[n]; if (tirage < 0) { nom = n; break; } }
+  h.push(nom);
+  if (h.length > S.repetitionMax) h.shift();
+  return nom;
+}
+
+function entrerMarche() {
+  boss.etat = 'marche';
   boss.t = 0;
-  boss.applique = false;
-  boss.marque = null;
+  boss.prochaine = choisirAttaque();
+  boss.delaiSort = S.sortLoinMinMs + Math.random() * (S.sortLoinMaxMs - S.sortLoinMinMs);
+}
+
+function lancerBoss(nom) {
+  const fauchage = nom === 'fauchage' || nom === 'retarde' || nom === 'double';
+  jouer(fauchage ? 'annonceFauchage' : 'annonceSort');
+  boss.etat = fauchage ? 'fauchage' : 'sort';
+  boss.variante = nom === 'fauchage' ? 'normal' : nom;
+  boss.t = 0;
+  boss.frappes = 0;
+  boss.retourne = false;
+  boss.marques = [];
 }
 
 function ouverture() {
   boss.etat = 'ouverture';
   boss.t = 0;
   boss.duree = phase2() ? S.phase2OuvertureMs : S.bossOuvertureMs;
+}
+
+// Le coup du héros qui remplit la posture interrompt l'attaque en cours
+function vaciller() {
+  boss.etat = 'vacille';
+  boss.t = 0;
+  boss.posture = 0;
+  boss.marques = [];
+  boss.frappes = 0;
+}
+
+// Instants, depuis le début de l'attaque, où le Fauchage frappe
+function tempsFrappes() {
+  if (boss.variante === 'retarde') return [S.fauchageRetardeMs];
+  if (boss.variante === 'double') return [S.fauchageAnnonceMs, S.fauchageAnnonceMs + S.doubleDelaiMs];
+  return [S.fauchageAnnonceMs];
 }
 
 function zoneFauchage() {
@@ -362,38 +411,47 @@ function zoneFauchage() {
 
 function majBoss(dt) {
   boss.t += dt;
-
-  if (boss.etat === 'ouverture') {
-    if (boss.t >= boss.duree) boss.etat = 'marche';
+  if (gt - boss.dernierCoup >= S.postureDelaiMs) {
+    boss.posture = Math.max(0, boss.posture - S.postureVidageParSeconde * dt / 1000);
   }
+
+  if (boss.etat === 'ouverture' && boss.t >= boss.duree) entrerMarche();
+  if (boss.etat === 'vacille' && boss.t >= S.vacilleMs) entrerMarche();
+
   if (boss.etat === 'marche') {
+    // Il approche toujours ; un Sort peut partir de loin ou au contact
     boss.dir = hero.x >= boss.x ? 1 : -1;
-    const e = ecart();
-    if (e > S.bossDistanceSort) { boss.sortsRestants = phase2() ? S.phase2Sorts - 1 : 0; lancerBoss('sort'); }
-    else if (e <= S.fauchagePortee) lancerBoss('fauchage');
+    const sortileges = boss.prochaine === 'sort' || boss.prochaine === 'pluie';
+    if (ecart() <= S.fauchagePortee || (sortileges && boss.t >= boss.delaiSort)) lancerBoss(boss.prochaine);
     else boss.x += boss.dir * S.bossVitesse * (phase2() ? S.phase2VitesseFacteur : 1) * dt / 1000;
   } else if (boss.etat === 'fauchage') {
-    if (!boss.applique && boss.t >= S.fauchageAnnonceMs) {
-      boss.applique = true;
+    const temps = tempsFrappes();
+    while (boss.frappes < temps.length && boss.t >= temps[boss.frappes]) {
+      boss.frappes++;
       jouer('fauchage');
       const [g, dr] = zoneFauchage();
       if (chevauche(heroG(), heroD(), g, dr)) heroTouche(S.fauchageDegats);
     }
-    if (boss.t >= S.fauchageAnnonceMs + S.fauchageZoneMs) ouverture();
+    // Le double Fauchage se retourne vers le héros avant le second coup
+    if (boss.variante === 'double' && !boss.retourne && boss.t >= temps[0] + S.fauchageZoneMs) {
+      boss.retourne = true;
+      boss.dir = hero.x >= boss.x ? 1 : -1;
+    }
+    if (boss.t >= temps[temps.length - 1] + S.fauchageZoneMs) ouverture();
   } else if (boss.etat === 'sort') {
-    if (!boss.marque && boss.t >= S.sortAnnonceMs) boss.marque = { x: hero.x, t0: boss.t };
-    if (boss.marque && !boss.applique && boss.t >= boss.marque.t0 + S.sortMarqueMs) {
-      boss.applique = true;
-      jouer('explosion');
-      if (chevauche(heroG(), heroD(), boss.marque.x - S.sortRayon, boss.marque.x + S.sortRayon)) heroTouche(S.sortDegats);
+    const nb = boss.variante === 'pluie' ? S.pluieMarques : 1;
+    while (boss.marques.length < nb && boss.t >= S.sortAnnonceMs + boss.marques.length * S.pluieEcartMs) {
+      boss.marques.push({ x: hero.x, t0: S.sortAnnonceMs + boss.marques.length * S.pluieEcartMs, applique: false });
     }
-    if (boss.applique && boss.t >= boss.marque.t0 + S.sortMarqueMs + S.sortExplosionMs) {
-      if (boss.sortsRestants > 0) { boss.sortsRestants--; lancerBoss('sort'); }
-      else if (phase2() && Math.random() < S.phase2FauchageChance) {
-        boss.dir = hero.x >= boss.x ? 1 : -1;
-        lancerBoss('fauchage');
-      } else ouverture();
+    for (const m of boss.marques) {
+      if (!m.applique && boss.t >= m.t0 + S.sortMarqueMs) {
+        m.applique = true;
+        jouer('explosion');
+        if (chevauche(heroG(), heroD(), m.x - S.sortRayon, m.x + S.sortRayon)) heroTouche(S.sortDegats);
+      }
     }
+    const derniere = boss.marques[boss.marques.length - 1];
+    if (boss.marques.length === nb && boss.t >= derniere.t0 + S.sortMarqueMs + S.sortExplosionMs) ouverture();
   }
 
   boss.x = Math.max(boss.w / 2, Math.min(S.arenaLargeur - boss.w / 2, boss.x));
@@ -511,10 +569,24 @@ function frameHero() {
 
 function frameBoss() {
   if (jeu.etat === 'victoire') return ['boss-mort', part(jeu.t, S.bossMortMs, nbFrames('boss-mort'))];
+  if (boss.etat === 'vacille') return ['boss-touche', boucle_(nbFrames('boss-touche'))];
   if (boss.etat === 'fauchage') {
-    const n = nbFrames('boss-fauchage'), imp = S.fauchageFrameImpact;
-    if (boss.t < S.fauchageAnnonceMs) return ['boss-fauchage', part(boss.t, S.fauchageAnnonceMs, imp)];
-    return ['boss-fauchage', imp + part(boss.t - S.fauchageAnnonceMs, S.fauchageZoneMs, n - imp)];
+    const n = nbFrames('boss-fauchage'), imp = S.fauchageFrameImpact, A = S.fauchageAnnonceMs, Z = S.fauchageZoneMs, t = boss.t;
+    const coup = (debut) => imp + part(t - debut, Z, n - imp);
+    if (boss.variante === 'retarde') {
+      if (t < A) return ['boss-fauchage', part(t, A, imp)];
+      if (t < S.fauchageRetardeMs) return ['boss-fauchage', imp - 1]; // l'élan est tenu
+      return ['boss-fauchage', coup(S.fauchageRetardeMs)];
+    }
+    if (boss.variante === 'double') {
+      const s2 = A + S.doubleDelaiMs;
+      if (t < A) return ['boss-fauchage', part(t, A, imp)];
+      if (t < A + Z) return ['boss-fauchage', coup(A)];
+      if (t < s2) return ['boss-fauchage', part(t - A - Z, s2 - A - Z, imp)]; // second élan
+      return ['boss-fauchage', coup(s2)];
+    }
+    if (t < A) return ['boss-fauchage', part(t, A, imp)];
+    return ['boss-fauchage', coup(A)];
   }
   if (boss.etat === 'sort') {
     const n = nbFrames('boss-incantation');
@@ -535,10 +607,27 @@ function dessinerSprite(im, f, x, miroir, sp, pivotX = sp.pivotX) {
   ctx.restore();
 }
 
+// La faux luit en blanc pendant l'élan tenu du Fauchage retardé
+function dessinerLueur() {
+  if (boss.etat !== 'fauchage' || boss.variante !== 'retarde') return;
+  if (boss.t < S.fauchageAnnonceMs || boss.t >= S.fauchageRetardeMs) return;
+  const l = S.lueurFaux, e = S.echelleSprite;
+  const x = boss.x - boss.dir * l.dx * e, y = S.solY + l.dy * e;
+  const pulse = 0.6 + 0.4 * Math.sin(boss.t / 1000 * Math.PI * 2 * l.pulseHz);
+  const g = ctx.createRadialGradient(x, y, 0, x, y, l.rayon);
+  g.addColorStop(0, `rgba(255,255,255,${l.alpha * pulse})`);
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(x - l.rayon, y - l.rayon, l.rayon * 2, l.rayon * 2);
+}
+
 // Arc clair qui suit la faux pendant la frappe du Fauchage
 function dessinerArc() {
-  if (boss.etat !== 'fauchage' || boss.t < S.fauchageAnnonceMs) return;
-  const p = Math.min(1, (boss.t - S.fauchageAnnonceMs) / S.fauchageZoneMs);
+  if (boss.etat !== 'fauchage') return;
+  const temps = tempsFrappes();
+  const debut = temps.filter(x => boss.t >= x).pop();
+  if (debut === undefined || boss.t >= debut + S.fauchageZoneMs) return;
+  const p = Math.min(1, (boss.t - debut) / S.fauchageZoneMs);
   const rad = Math.PI / 180;
   const tete = S.arcDebutDeg + (S.arcFinDeg - S.arcDebutDeg) * p;
   const queue = Math.max(S.arcDebutDeg, tete - S.arcQueueDeg);
@@ -568,7 +657,7 @@ function dessinerArc() {
 function dessinerRunes(m) {
   const t = boss.t - m.t0;
   const frac = Math.min(1, t / S.sortMarqueMs);
-  const explose = boss.applique;
+  const explose = m.applique;
   const pulse = explose ? 1 : 0.5 + 0.5 * Math.sin(t / 1000 * Math.PI * 2 * (S.runesPulseHz + S.runesPulseAccel * frac));
   const rx = S.sortRayon * (1 + 0.06 * pulse), ry = rx * S.runesAplat;
   const couleur = explose ? S.runesCouleurVive : S.runesCouleur;
@@ -638,17 +727,17 @@ function dessiner() {
   ctx.imageSmoothingEnabled = false;
   dessinerPlans(cx);
 
-  if (boss.etat === 'sort' && boss.marque) {
-    const m = boss.marque;
+  for (const m of boss.marques) {
     dessinerRunes(m);
     const total = S.sortMarqueMs + S.sortExplosionMs;
     const [im, n] = anim('boss-sort');
-    const f = Math.min(n - 1, Math.floor((boss.t - m.t0) / total * n));
+    const f = Math.max(0, Math.min(n - 1, Math.floor((boss.t - m.t0) / total * n)));
     dessinerSprite(im, f, m.x, false, S.bossSprite, S.sortPivotX);
   }
 
   const [nomB, fb] = frameBoss();
   dessinerSprite(images[nomB], fb, boss.x, boss.dir > 0, S.bossSprite);
+  dessinerLueur();
   dessinerArc();
 
   ctx.globalAlpha = invulnerable() ? S.rouladeAlpha : 1;
@@ -671,6 +760,8 @@ function dessiner() {
   ctx.textBaseline = 'bottom';
   ctx.fillText(S.bossNom, bx, by - S.barreEspace / 2);
   barre(bx, by, S.bossBarreLargeur, boss.vie / S.bossVie, '#a33');
+  ctx.fillStyle = S.postureCouleur;
+  ctx.fillRect(bx, by + S.barreHauteur + S.barreEspace / 2, S.bossBarreLargeur * Math.min(1, boss.posture / S.postureMax), S.postureHauteur);
 
   // Départ, mort et victoire
   if (jeu.etat !== 'combat') {

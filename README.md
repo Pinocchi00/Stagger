@@ -33,7 +33,7 @@ Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer, Ma
 - [x] 4. Les sprites
 - [x] 5. Décor, effets et son
 - [x] 6. Caméra et lisibilité
-- [ ] 7. Boss varié et vacillement
+- [x] 7. Boss varié et vacillement
 - [ ] 8. Réglage du combat
 - [ ] 9. Monstres personnalisés
 - [ ] 10. Environnement
