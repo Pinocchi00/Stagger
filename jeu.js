@@ -63,9 +63,9 @@ function recommencer() {
   Object.assign(hero, {
     x: S.heroDepartX,
     dir: 1,               // il regarde toujours le boss
-    etat: 'libre',        // libre, roulade, attaque, touche
+    etat: 'libre',        // libre, esquive, attaque, touche
     t: 0,                 // temps passé dans l'état, ms
-    rouladeDir: 1,
+    esquiveDir: 1,
     reculDir: 1,
     attaqueN: 1,
     frappe: false,        // le coup de l'attaque en cours a-t-il eu lieu
@@ -75,8 +75,6 @@ function recommencer() {
     vie: S.vie,
     endurance: S.enduranceMax,
     derniereAction: -1e9,
-    paradeAt: -1e9,       // instant du toucher de parade
-    finParade: -1e9,
     reculMs: S.coupRecuMs,
     reculDist: S.coupRecuRecul,
     attaqueId: 0,         // numéro de l'attaque en cours
@@ -162,7 +160,7 @@ function jouer(nom) {
 }
 
 // ---------- Héros ----------
-const invulnerable = () => hero.etat === 'roulade' && hero.t < S.rouladeInvulnerableMs;
+const invulnerable = () => hero.etat === 'esquive' && hero.t < S.esquiveInvulnerableMs;
 
 // Retire l'endurance et rend la somme réellement payée
 function payer(cout) {
@@ -186,7 +184,7 @@ function lancerAttaque(source) {
 }
 
 function attaquer(source) {
-  if (jeu.etat !== 'combat' || hero.endurance <= 0 || hero.etat === 'roulade' || hero.etat === 'touche' || hero.etat === 'parade') return;
+  if (jeu.etat !== 'combat' || hero.endurance <= 0 || hero.etat === 'esquive' || hero.etat === 'touche') return;
   if (hero.etat === 'attaque') { hero.enfile = true; hero.fileSource = source; return; }
   lancerAttaque(source);
 }
@@ -202,13 +200,13 @@ function annulerAttaque(source) {
   }
 }
 
-function rouler(dir) {
-  if (jeu.etat !== 'combat' || hero.endurance <= 0 || hero.etat === 'roulade' || hero.etat === 'touche' || hero.etat === 'parade') return;
-  payer(S.enduranceRoulade);
-  jouer('roulade');
-  hero.etat = 'roulade';
+function esquiver(dir) {
+  if (jeu.etat !== 'combat' || hero.endurance <= 0 || hero.etat === 'esquive' || hero.etat === 'touche') return;
+  payer(S.enduranceEsquive);
+  jouer('esquive');
+  hero.etat = 'esquive';
   hero.t = 0;
-  hero.rouladeDir = dir;
+  hero.esquiveDir = dir;
   hero.enfile = false;
 }
 
@@ -229,23 +227,15 @@ function heroTouche(degats) {
 // ---- Parade ----
 let blanc = null;         // dernier impact de parade : { debut, type, x, y, etoile, lignes }
 
-function parer() {
-  if (jeu.etat !== 'combat' || hero.endurance <= 0) return;
-  if (hero.etat !== 'libre' && hero.etat !== 'attaque') return;
-  if (gt - hero.finParade < S.paradeRecupMs) return;
-  payer(S.enduranceParade);
-  hero.etat = 'parade';
-  hero.t = 0;
-  hero.paradeAt = gt;
-  hero.enfile = false;
-}
-
-// Le coup du boss est-il paré ? Le toucher doit tomber dans les dernières S.paradeSimpleMs avant l'impact
+// Le coup du boss est-il paré ? Le coup d'épée du héros doit tomber au même moment :
+// l'impact de sa lame (au milieu de l'attaque) à moins de S.paradeParfaiteMs / 2 de celui du boss pour une parade parfaite,
+// à moins de S.paradeSimpleMs / 2 pour une parade simple.
 function resultatParade() {
-  if (hero.etat !== 'parade') return null;
-  const avant = gt - hero.paradeAt;
-  if (avant > S.paradeSimpleMs) return null;
-  return avant <= S.paradeParfaiteMs ? 'parfaite' : 'simple';
+  if (hero.etat !== 'attaque') return null;
+  const ecart = Math.abs(hero.t - S.attaqueMs * S.attaqueImpactRatio);
+  if (ecart <= S.paradeParfaiteMs / 2) return 'parfaite';
+  if (ecart <= S.paradeSimpleMs / 2) return 'simple';
+  return null;
 }
 
 function creerImpact(type) {
@@ -263,10 +253,7 @@ function creerImpact(type) {
 
 function heroParade(type) {
   creerImpact(type);
-  hero.finParade = gt;
-  hero.t = 0;
   if (type === 'parfaite') {
-    hero.etat = 'libre';
     boss.dernierCoup = gt;
     boss.posture += S.postureParadeParfaite;
     if (boss.posture >= S.postureMax) vaciller();
@@ -275,6 +262,8 @@ function heroParade(type) {
   } else {
     payer(S.enduranceParadeSimple);
     hero.etat = 'touche';
+    hero.t = 0;
+    hero.enfile = false;
     hero.reculDir = hero.x >= boss.x ? 1 : -1;
     hero.reculMs = S.paradeSimpleReculMs;
     hero.reculDist = S.paradeSimpleRecul;
@@ -333,31 +322,27 @@ window.addEventListener('pointerdown', e => {
   if (touches.has(e.pointerId)) return;
   const cote = e.clientX < window.innerWidth / 2 ? 'gauche' : 'droite';
   if (cote === 'gauche' && marcheTactile() !== null) return; // un seul pouce gauche
-  touches.set(e.pointerId, { cote, x0: e.clientX, y0: e.clientY, t0: e.timeStamp, x: e.clientX, depl: 0, fait: false });
+  touches.set(e.pointerId, { cote, x0: e.clientX, y0: e.clientY, x: e.clientX, fait: false });
   if (cote === 'droite' && !portrait()) attaquer(e.pointerId); // l'attaque part dès la pose du doigt
 });
 window.addEventListener('pointermove', e => {
   const p = touches.get(e.pointerId);
   if (!p) return;
   p.x = e.clientX;
-  p.depl = Math.max(p.depl, Math.abs(p.x - p.x0));
   if (p.cote === 'droite' && !p.fait && Math.abs(p.x - p.x0) >= S.glisserMinPx) {
     p.fait = true;
     annulerAttaque(e.pointerId);
-    rouler(Math.sign(p.x - p.x0));
+    esquiver(Math.sign(p.x - p.x0));
   }
 });
 function relacher(e) {
-  const p = touches.get(e.pointerId);
   touches.delete(e.pointerId);
-  // Un toucher bref et immobile à gauche est une parade
-  if (p && e.type === 'pointerup' && p.cote === 'gauche' && p.depl < S.zoneMortePx && e.timeStamp - p.t0 <= S.paradeToucherMaxMs) parer();
 }
 window.addEventListener('pointerup', e => { pleinEcran(); relancer(); relacher(e); });
 window.addEventListener('pointercancel', relacher);
 
 window.addEventListener('keydown', e => {
-  if (['ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyX'].includes(e.code)) e.preventDefault();
+  if (['ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight'].includes(e.code)) e.preventDefault();
   initAudio();
   pleinEcran();
   if (e.repeat) return;
@@ -365,8 +350,7 @@ window.addEventListener('keydown', e => {
   if (demarrer()) return;
   relancer();
   if (e.code === 'Space') attaquer('clavier');
-  if (e.code === 'KeyX') parer();
-  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') rouler(direction() || hero.dir);
+  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') esquiver(direction() || hero.dir);
 });
 window.addEventListener('keyup', e => clavier.delete(e.code));
 window.addEventListener('blur', () => { clavier.clear(); touches.clear(); });
@@ -408,14 +392,12 @@ function majHero(dt) {
 
   if (hero.etat === 'libre') {
     hero.x += direction() * S.vitesseMarche * dt / 1000;
-  } else if (hero.etat === 'roulade') {
-    hero.x += hero.rouladeDir * S.rouladeLargeurs * S.heroLargeur * dt / S.rouladeMs;
-    if (hero.t >= S.rouladeMs) { hero.etat = 'libre'; hero.t = 0; }
+  } else if (hero.etat === 'esquive') {
+    hero.x += hero.esquiveDir * S.esquiveLargeurs * S.heroLargeur * dt / S.esquiveMs;
+    if (hero.t >= S.esquiveMs) { hero.etat = 'libre'; hero.t = 0; }
   } else if (hero.etat === 'touche') {
     hero.x += hero.reculDir * hero.reculDist * dt / hero.reculMs;
     if (hero.t >= hero.reculMs) { hero.etat = 'libre'; hero.t = 0; }
-  } else if (hero.etat === 'parade') {
-    if (hero.t >= S.paradeMs) { hero.etat = 'libre'; hero.t = 0; hero.finParade = gt; }
   } else {
     if (!hero.frappe && hero.t >= S.attaqueMs * S.attaqueImpactRatio) { hero.frappe = true; frapperBoss(); }
     if (hero.t >= S.attaqueMs && jeu.etat === 'combat') {
@@ -429,7 +411,7 @@ function majHero(dt) {
   }
 
   hero.x = Math.max(S.heroLargeur / 2, Math.min(S.arenaLargeur - S.heroLargeur / 2, hero.x));
-  if (hero.etat !== 'roulade') sortirDuBoss();
+  if (hero.etat !== 'esquive') sortirDuBoss();
 
   if (gt - hero.derniereAction >= S.enduranceRegenDelaiMs) {
     hero.endurance = Math.min(S.enduranceMax, hero.endurance + S.enduranceRegenParSeconde * dt / 1000);
@@ -1046,7 +1028,7 @@ function dessinerImpactBlanc() {
     const [nomB, fb] = frameBoss();
     dessinerSilhouette(nomB, fb, boss.x, boss.dir > 0, S.bossSprite);
     const [nomH, fh] = frameHero();
-    dessinerSilhouette(nomH, fh, hero.x, hero.etat === 'roulade' ? hero.rouladeDir < 0 : hero.dir < 0, S.heroSprite);
+    dessinerSilhouette(nomH, fh, hero.x, hero.etat === 'esquive' ? hero.esquiveDir < 0 : hero.dir < 0, S.heroSprite);
   } else {
     ctx.globalAlpha = 1 - p;
     ctx.fillStyle = `rgba(255,255,255,${B.simpleAlpha})`;
@@ -1136,7 +1118,7 @@ function barre(x, y, largeur, part, couleur) {
 }
 
 // ---------- Sprites ----------
-const noms = ['heros-attente', 'heros-course', 'heros-roulade', 'heros-attaque1', 'heros-attaque2', 'heros-touche', 'heros-mort', 'heros-parade',
+const noms = ['heros-attente', 'heros-course', 'heros-esquive', 'heros-attaque1', 'heros-attaque2', 'heros-touche', 'heros-mort',
   'boss-attente', 'boss-marche', 'boss-fauchage', 'boss-incantation', 'boss-sort', 'boss-touche', 'boss-mort'];
 const images = {};
 let chargees = 0;
@@ -1160,13 +1142,12 @@ const nbFrames = (nom) => anim(nom)[1];
 
 function frameHero() {
   if (jeu.etat === 'mort') return ['heros-mort', part(jeu.t, S.mortMs, nbFrames('heros-mort'))];
-  if (hero.etat === 'roulade') return ['heros-roulade', part(hero.t, S.rouladeMs, nbFrames('heros-roulade'))];
+  if (hero.etat === 'esquive') return ['heros-esquive', part(hero.t, S.esquiveMs, nbFrames('heros-esquive'))];
   if (hero.etat === 'attaque') {
     const nom = hero.attaqueN === 2 ? 'heros-attaque2' : 'heros-attaque1';
     return [nom, part(hero.t, S.attaqueMs, nbFrames(nom))];
   }
   if (hero.etat === 'touche') return ['heros-touche', 0];
-  if (hero.etat === 'parade') return ['heros-parade', 0];
   const nom = jeu.etat === 'combat' && direction() !== 0 ? 'heros-course' : 'heros-attente';
   return [nom, boucle_(nbFrames(nom))];
 }
@@ -1355,11 +1336,11 @@ function dessiner() {
 
   // Le héros à bout d'endurance s'efface et vacille
   const epuise = hero.endurance <= 0 && jeu.etat === 'combat';
-  ctx.globalAlpha = invulnerable() ? S.rouladeAlpha : epuise ? S.signaux.epuiseAlpha : 1;
+  ctx.globalAlpha = invulnerable() ? S.esquiveAlpha : epuise ? S.signaux.epuiseAlpha : 1;
   const [nomH, fh] = frameHero();
   ctx.save();
   if (epuise) ctx.translate(Math.sin(rt / 1000 * Math.PI * 2 * S.signaux.epuiseHz) * S.signaux.epuiseBalancement, 0);
-  dessinerSprite(images[nomH], fh, hero.x, hero.etat === 'roulade' ? hero.rouladeDir < 0 : hero.dir < 0, S.heroSprite);
+  dessinerSprite(images[nomH], fh, hero.x, hero.etat === 'esquive' ? hero.esquiveDir < 0 : hero.dir < 0, S.heroSprite);
   ctx.restore();
   ctx.globalAlpha = 1;
 

@@ -13,11 +13,10 @@ Le jeu se joue dans le navigateur, téléphone tenu à l'horizontale.
 | Geste | Zone de l'écran | Action |
 | --- | --- | --- |
 | Glisser et maintenir | Moitié gauche | Marcher |
-| Toucher | Moitié droite | Attaquer (dès que le doigt se pose) |
-| Glisser | Moitié droite | Rouler |
-| Toucher bref | Moitié gauche | Parer (au bon moment, juste avant le coup du boss) |
+| Toucher | Moitié droite | Attaquer, et parer si le coup d'épée tombe au moment de celui du boss |
+| Glisser | Moitié droite | Esquiver : un déplacement rapide sur le côté |
 
-Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer, Maj pour rouler, X pour parer.
+Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer (et parer), Maj pour esquiver.
 
 ## Tester sur téléphone
 

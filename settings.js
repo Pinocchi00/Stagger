@@ -19,15 +19,15 @@ const SETTINGS = {
   // Endurance (lot 1)
   enduranceMax: 100,
   enduranceAttaque: 20,
-  enduranceRoulade: 30,
+  enduranceEsquive: 30,
   enduranceRegenParSeconde: 40,
   enduranceRegenDelaiMs: 500, // temps sans action avant que l'endurance remonte
 
-  // Roulade (lot 1)
-  rouladeMs: 500,
-  rouladeLargeurs: 3,         // distance, en largeurs de héros
-  rouladeInvulnerableMs: 300,
-  rouladeAlpha: 0.45,         // opacité du héros tant qu'il est invulnérable
+  // Esquive : un déplacement rapide sur le côté
+  esquiveMs: 280,
+  esquiveLargeurs: 3.5,       // distance, en largeurs de héros
+  esquiveInvulnerableMs: 200,
+  esquiveAlpha: 0.45,         // opacité du héros tant qu'il est invulnérable
 
   // Attaque (lot 1)
   attaqueMs: 350,
@@ -106,7 +106,7 @@ const SETTINGS = {
 
   // Commandes tactiles (lot 1)
   zoneMortePx: 12,            // glissement minimal du pouce gauche pour marcher
-  glisserMinPx: 40,           // glissement minimal du pouce droit pour rouler
+  glisserMinPx: 40,           // glissement minimal du pouce droit pour esquiver
 
   // Affichage (lot 1)
   barreHauteur: 28,           // deux fois plus hautes (lot 6)
@@ -247,13 +247,9 @@ const SETTINGS = {
     soufflesMax: 40,
   },
 
-  // Parade (ajout après le lot 7) : un toucher bref dans la moitié gauche, au bon moment
-  paradeMs: 300,              // durée de la garde levée
-  paradeParfaiteMs: 120,      // parfaite : le toucher tombe dans ce délai avant l'impact
-  paradeSimpleMs: 250,        // simple : le toucher tombe dans ce délai avant l'impact
-  paradeRecupMs: 200,         // temps avant de pouvoir parer de nouveau
-  paradeToucherMaxMs: 220,    // durée maximale du toucher pour compter comme parade
-  enduranceParade: 10,
+  // Parade : un coup d'épée au bon moment, quand l'impact de la lame tombe avec celui du boss
+  paradeParfaiteMs: 120,      // parfaite : écart total toléré entre les deux impacts (la moitié de chaque côté)
+  paradeSimpleMs: 250,        // simple : écart total toléré
   enduranceParadeSimple: 20,  // la parade simple use en plus l'endurance
   paradeSimpleRecul: 40,
   paradeSimpleReculMs: 150,
@@ -296,7 +292,7 @@ const SETTINGS = {
   sonVolume: 0.5,
   sons: {
     attaque: [{ bruit: true, filtre: 'highpass', hz: 2500, duree: 0.12, volume: 0.18 }],
-    roulade: [{ bruit: true, filtre: 'lowpass', hz: 700, duree: 0.25, volume: 0.2 }],
+    esquive: [{ bruit: true, filtre: 'lowpass', hz: 700, duree: 0.25, volume: 0.2 }],
     coupDonne: [
       { forme: 'square', f0: 260, f1: 90, duree: 0.1, volume: 0.25 },
       { bruit: true, filtre: 'lowpass', hz: 2200, duree: 0.08, volume: 0.25 },
