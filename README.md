@@ -16,6 +16,8 @@ Le jeu se joue dans le navigateur, téléphone tenu à l'horizontale.
 | Toucher | Moitié droite | Attaquer, et parer si le coup d'épée tombe au moment de celui du boss |
 | Glisser | Moitié droite | Esquiver : un déplacement rapide sur le côté |
 
+**Les flammes.** Grimalkin porte cinq queues enflammées, et ses coups ne l'entament qu'une flamme à la fois : chaque parade éteint une flamme, puis sa vie peut descendre d'un cinquième. Sans parade, ses flammes le protègent.
+
 Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer (et parer), Maj pour esquiver.
 
 ## Tester sur téléphone

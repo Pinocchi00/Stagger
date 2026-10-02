@@ -12,6 +12,9 @@ let cendres = [];         // cendres, ou braises en phase 2, dans l'image
 let braises = [];         // braises qui montent des flammes : { x, y, vx, vy, t0 }
 let souffles = [];        // buée du héros essoufflé : { x, y, vx, vy, t0 }
 let fumees = [];          // fumée noire au-dessus des flammes : { x, y, vx, vy, t0 }
+let feux = [];            // particules de feu des flammes : { x, y, vx, vy, t0, vie, s, ph }
+let spritesFeu = [];      // taches lumineuses précalculées, une par couleur
+let spriteFumee = null;   // tache de fumée douce
 let eclair = -1e9;        // instant du dernier éclair, en temps réel
 
 const boss = { x: 0, w: S.bossLargeur };
@@ -99,6 +102,8 @@ function recommencer() {
     marques: [],          // marques du Sort : { x, t0, applique }
     historique: [],       // dernières attaques lancées
     posture: 0,           // en crans
+    eteintes: 0,          // flammes éteintes par des parades
+    eteintesT: [],        // instant où chaque queue s'est éteinte, en temps réel
     dernierCoup: -1e9,
     flash: -1e9,
   });
@@ -111,6 +116,7 @@ function recommencer() {
 
 window.addEventListener('resize', ajuster);
 genererDecor();
+creerSpritesFeu();
 recommencer();
 jeu.etat = 'depart';
 ajuster();
@@ -229,6 +235,18 @@ function heroTouche(degats) {
 // ---- Parade ----
 let blanc = null;         // dernier impact de parade : { debut, type, x, y, etoile, lignes }
 
+// Une parade éteint une flamme, de la première queue à la dernière
+function eteindreFlamme() {
+  if (boss.eteintes >= S.queues.nombre) return;
+  const i = boss.eteintes++;
+  boss.eteintesT[i] = rt;
+  const pts = geometrieQueues()[i], bout = pts[pts.length - 1], Q = S.queues;
+  for (let k = 0; k < Q.fumeeEteinte; k++) {
+    fumees.push({ x: bout[0] + (Math.random() - 0.5) * 14, y: bout[1] - Math.random() * 18, vx: (Math.random() - 0.5) * 30, vy: -Q.fumeeMonte * (0.8 + Math.random()), t0: rt - Math.random() * 200 });
+  }
+  jouer('flammeEteinte');
+}
+
 // Le coup du boss est-il paré ? Le coup d'épée du héros doit tomber au même moment :
 // l'impact de sa lame (au milieu de l'attaque) à moins de S.paradeParfaiteMs / 2 de celui du boss pour une parade parfaite,
 // à moins de S.paradeSimpleMs / 2 pour une parade simple.
@@ -249,12 +267,13 @@ function creerImpact(type) {
     x: hero.x + hero.dir * S.heroLargeur * S.contactX,
     y: S.solY - S.heroHauteur * S.contactY,
     etoile: Array.from({ length: pointes * 2 }, () => 0.8 + Math.random() * 0.4),
-    lignes: Array.from({ length: type === 'parfaite' ? B.lignes : B.etincelles }, () => [Math.random() * Math.PI * 2, Math.random()]),
+    lignes: Array.from({ length: type === 'parfaite' ? B.lignes : type === 'bloque' ? B.bloqueEtincelles : B.etincelles }, () => [Math.random() * Math.PI * 2, Math.random()]),
   };
 }
 
 function heroParade(type) {
   creerImpact(type);
+  eteindreFlamme();
   if (type === 'parfaite') {
     boss.dernierCoup = gt;
     boss.posture += S.postureParadeParfaite;
@@ -376,12 +395,21 @@ function frapperBoss() {
   if (!chevauche(Math.min(depart, fin), Math.max(depart, fin), boss.x - boss.w / 2, boss.x + boss.w / 2)) return;
   const vacille = boss.etat === 'vacille';
   const degats = (hero.attaqueN === 2 ? S.attaque2Degats : S.attaqueDegats) * (vacille ? S.vacilleDegatsFacteur : 1);
-  boss.vie = Math.max(0, boss.vie - degats);
+  // Tant qu'une flamme protège le boss, la vie ne peut pas descendre sous le palier de cette flamme
+  const plancher = S.bossVie * (1 - boss.eteintes / S.queues.nombre);
+  const bloque = boss.vie <= plancher;
+  boss.vie = Math.max(plancher, boss.vie - degats);
   boss.flash = gt;
   boss.dernierCoup = gt;
   if (!vacille) {
     boss.posture += hero.attaqueN === 2 ? S.postureCoup2 : S.postureCoup;
     if (boss.posture >= S.postureMax) vaciller();
+  }
+  if (bloque) {
+    creerImpact('bloque');
+    jouer('coupBloque');
+    impact(0, S.tremblementCoupDonneMs, S.tremblementCoupDonnePx * 0.4);
+    return;
   }
   impact(S.arretCoupDonneMs, S.tremblementCoupDonneMs, S.tremblementCoupDonnePx);
   jouer('coupDonne');
@@ -610,12 +638,26 @@ function genererCendres() {
 }
 
 // ---- Flammes et queues de Grimalkin ----
-function intensiteFlammes() {
+// Facteur commun à toutes les flammes : phase 2, vacillement, mort
+function facteurFlammes() {
   const Q = S.queues;
   let f = phase2() ? Q.phase2Facteur : 1;
   if (boss.etat === 'vacille') f *= Q.vacilleFacteur;
   if (jeu.etat === 'victoire') f *= Math.max(0, 1 - jeu.t / S.bossMortMs);
   return f;
+}
+
+// 1 pour une flamme allumée, 0 pour une flamme éteinte, avec un fondu
+function fondu(i) {
+  const t = boss.eteintesT[i];
+  return t === undefined ? 1 : Math.max(0, 1 - (rt - t) / S.queues.eteinteMs);
+}
+
+// Lumière du boss : elle vient des flammes, moins il en a, plus la scène est sombre
+function intensiteFlammes() {
+  let allumees = 0;
+  for (let i = 0; i < S.queues.nombre; i++) allumees += fondu(i);
+  return facteurFlammes() * (0.12 + 0.88 * allumees / S.queues.nombre);
 }
 
 // Points de chaque queue, du dos du boss jusqu'à la flamme
@@ -638,9 +680,9 @@ function geometrieQueues() {
   return queues;
 }
 
-// Flamme sombre et déchiquetée : plusieurs langues qui se tordent, du rouge noir à l'or pâle
-function dessinerFlamme(x, y, taille, graine) {
-  const F = S.queues.flamme, t = rt / 1000;
+// Lueur au bout de la queue ; le corps de la flamme est fait des particules de feu
+function dessinerLueurFlamme(x, y, taille) {
+  const F = S.queues.flamme;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const R = taille * F.halo;
@@ -650,29 +692,48 @@ function dessinerFlamme(x, y, taille, graine) {
   ctx.fillStyle = g;
   ctx.fillRect(x - R, y - R, R * 2, R * 2);
   ctx.restore();
-  F.couches.forEach((couleur, c) => {
-    const echelle = 1 - c * 0.24;
-    ctx.fillStyle = couleur;
-    for (let i = 0; i < F.langues; i++) {
-      const u = i / (F.langues - 1) - 0.5;                   // -0.5 à 0.5 : position de la langue
-      const graineI = graine * 3.1 + i * 1.9 + c * 0.7;
-      const tremble = Math.sin(t * Math.PI * 2 * F.scintillementHz + graineI);
-      const h = taille * echelle * (1.15 - Math.abs(u) * 0.9) * (1 + 0.28 * tremble);
-      const cx = x + u * taille * 0.9 * echelle + Math.sin(t * 7 + graineI) * taille * 0.1;
-      const pointe = cx + Math.sin(t * Math.PI * 2 * F.scintillementHz * 0.6 + graineI) * taille * 0.3 + u * taille * 0.5;
-      const w = taille * F.largeur * echelle;
-      ctx.beginPath();
-      ctx.moveTo(cx - w, y);
-      ctx.quadraticCurveTo(cx - w * 0.9, y - h * 0.5, pointe, y - h);
-      ctx.quadraticCurveTo(cx + w * 0.8, y - h * 0.45, cx + w, y);
-      ctx.quadraticCurveTo(cx, y + w * 0.5, cx - w, y);
-      ctx.fill();
-    }
+}
+
+function creerSpritesFeu() {
+  spritesFeu = S.queues.feu.couleurs.map(c => {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 64;
+    const g = cv.getContext('2d');
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, `rgba(${c},1)`);
+    gr.addColorStop(0.45, `rgba(${c},0.5)`);
+    gr.addColorStop(1, `rgba(${c},0)`);
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 64);
+    return cv;
   });
+  spriteFumee = document.createElement('canvas');
+  spriteFumee.width = spriteFumee.height = 64;
+  const g = spriteFumee.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(26,20,22,1)');
+  gr.addColorStop(1, 'rgba(26,20,22,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+}
+
+// Chaque particule passe du cœur blanc au rouge sombre en montant : c'est ce qui fait la flamme
+function dessinerFeux() {
+  const F = S.queues.feu, n = spritesFeu.length;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of feux) {
+    const a = (rt - p.t0) / p.vie;
+    if (a < 0 || a >= 1) continue;
+    const s = p.s * (1 - 0.7 * a);
+    ctx.globalAlpha = F.alpha * (1 - a * a);
+    ctx.drawImage(spritesFeu[Math.min(n - 1, Math.floor(a * n))], p.x - s, p.y - s * F.etirement, s * 2, s * 2 * F.etirement);
+  }
+  ctx.restore();
 }
 
 function dessinerQueues() {
-  const Q = S.queues, f = intensiteFlammes();
+  const Q = S.queues, f = facteurFlammes();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   geometrieQueues().forEach((pts, i) => {
@@ -707,9 +768,16 @@ function dessinerQueues() {
     ctx.moveTo(pts[debut][0], pts[debut][1]);
     for (let k = debut + 1; k <= n; k++) ctx.lineTo(pts[k][0], pts[k][1]);
     ctx.stroke();
-    const bout = pts[n];
-    if (f > 0.02) dessinerFlamme(bout[0], bout[1], Q.flamme.taille * f, i);
+    const bout = pts[n], fi = f * fondu(i);
+    if (fi > 0.02) dessinerLueurFlamme(bout[0], bout[1], Q.flamme.taille * fi);
+    else if (jeu.etat !== 'victoire') {   // queue éteinte : une braise qui couve
+      ctx.fillStyle = `rgba(190,40,10,${0.35 + 0.25 * Math.sin(rt / 300 + i)})`;
+      ctx.beginPath();
+      ctx.arc(bout[0], bout[1], 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
   });
+  dessinerFeux();
 }
 
 // ---- Particules, mises à jour à chaque image ----
@@ -725,18 +793,29 @@ function majEffets(dt) {
     if (p.y > H) { p.y -= H; p.x = Math.random() * W; }
   }
 
-  const f = intensiteFlammes();
-  if (jeu.etat !== 'depart' && f > 0.05) {
-    for (const pts of geometrieQueues()) {
-      if (Math.random() < Q.braisesParSeconde * f * dt / 1000 && braises.length < Q.braisesMax) {
-        const bout = pts[pts.length - 1];
+  const F = Q.feu, tire = (p) => p[0] + Math.random() * (p[1] - p[0]);
+  if (jeu.etat !== 'depart') {
+    geometrieQueues().forEach((pts, i) => {
+      const fi = facteurFlammes() * fondu(i), bout = pts[pts.length - 1];
+      if (fi < 0.03) return;
+      for (let reste = F.parSeconde * fi * dt / 1000; reste > 0; reste--) {
+        if (Math.random() < Math.min(1, reste) && feux.length < F.max) {
+          feux.push({ x: bout[0] + (Math.random() - 0.5) * F.etalement, y: bout[1], vx: (Math.random() - 0.5) * F.derive,
+            vy: -tire(F.montee), t0: rt, vie: tire(F.vie), s: tire(F.taille) * fi, ph: Math.random() * 6.28 });
+        }
+      }
+      if (Math.random() < Q.braisesParSeconde * fi * dt / 1000 && braises.length < Q.braisesMax) {
         braises.push({ x: bout[0], y: bout[1], vx: (Math.random() - 0.5) * Q.braiseVitesse, vy: -Q.braiseVitesse * (0.5 + Math.random()), t0: rt });
       }
-      if (Math.random() < Q.fumeeParSeconde * f * dt / 1000 && fumees.length < Q.fumeeMax) {
-        const bout = pts[pts.length - 1];
-        fumees.push({ x: bout[0], y: bout[1] - Q.flamme.taille * f * 0.6, vx: (Math.random() - 0.3) * 14, vy: -Q.fumeeMonte * (0.6 + Math.random() * 0.6), t0: rt });
+      if (Math.random() < Q.fumeeParSeconde * fi * dt / 1000 && fumees.length < Q.fumeeMax) {
+        fumees.push({ x: bout[0], y: bout[1] - Q.flamme.taille * fi * 0.9, vx: (Math.random() - 0.3) * 14, vy: -Q.fumeeMonte * (0.6 + Math.random() * 0.6), t0: rt });
       }
-    }
+    });
+  }
+  feux = feux.filter(p => rt - p.t0 < p.vie);
+  for (const p of feux) {
+    p.x += (p.vx + Math.sin(rt / 1000 * Math.PI * 2 * F.turbulenceHz + p.ph) * F.turbulence) * dt / 1000;
+    p.y += p.vy * dt / 1000;
   }
   braises = braises.filter(p => rt - p.t0 < Q.braiseVie);
   fumees = fumees.filter(p => rt - p.t0 < Q.fumeeVie);
@@ -1007,6 +1086,21 @@ function etoile(b, rayon, creux, contour, remplissage) {
 function dessinerImpactBlanc() {
   if (!blanc) return 0;
   const B = S.impactBlanc, age = rt - blanc.debut, parfaite = blanc.type === 'parfaite';
+  if (blanc.type === 'bloque') {   // coup sur un boss protégé : seulement des étincelles
+    if (age >= B.bloqueMs) return 0;
+    ctx.save();
+    ctx.globalAlpha = 1 - age / B.bloqueMs;
+    ctx.strokeStyle = '#fff0c8';
+    ctx.lineWidth = 2;
+    for (const [a, v] of blanc.lignes) {
+      ctx.beginPath();
+      ctx.moveTo(blanc.x + Math.cos(a) * B.bloqueRayon * 0.4, blanc.y + Math.sin(a) * B.bloqueRayon * 0.4);
+      ctx.lineTo(blanc.x + Math.cos(a) * B.bloqueRayon * (0.8 + v * 1.2), blanc.y + Math.sin(a) * B.bloqueRayon * (0.8 + v * 1.2));
+      ctx.stroke();
+    }
+    ctx.restore();
+    return 0;
+  }
   const duree = parfaite ? B.parfaiteMs : B.simpleMs;
   if (age >= duree) return 0;
   const p = age / duree;
@@ -1053,10 +1147,10 @@ function dessinerParticulesMonde() {
   const Q = S.queues, G = S.signaux;
   for (const p of fumees) {
     const a = (rt - p.t0) / Q.fumeeVie;
-    ctx.fillStyle = `rgba(14,10,12,${Q.fumeeAlpha * (1 - a)})`;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, Q.fumeeTaille * (0.7 + a * 1.8), 0, Math.PI * 2);
-    ctx.fill();
+    const t = Q.fumeeTaille * (0.7 + a * 1.8);
+    ctx.globalAlpha = Q.fumeeAlpha * (1 - a);
+    ctx.drawImage(spriteFumee, p.x - t, p.y - t, t * 2, t * 2);
+    ctx.globalAlpha = 1;
   }
   for (const p of braises) {
     const a = 1 - (rt - p.t0) / Q.braiseVie;
@@ -1367,6 +1461,8 @@ function dessiner() {
   ctx.textBaseline = 'bottom';
   ctx.fillText(S.bossNom, bx, by - S.barreEspace / 2);
   barre(bx, by, S.bossBarreLargeur, boss.vie / S.bossVie, '#a33');
+  ctx.fillStyle = '#000';
+  for (let i = 1; i < S.queues.nombre; i++) ctx.fillRect(bx + S.bossBarreLargeur * i / S.queues.nombre - 1.5, by, 3, S.barreHauteur);
   ctx.fillStyle = S.postureCouleur;
   ctx.fillRect(bx, by + S.barreHauteur + S.barreEspace / 2, S.bossBarreLargeur * Math.min(1, boss.posture / S.postureMax), S.postureHauteur);
 

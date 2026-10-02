@@ -1,7 +1,7 @@
 // Fichier de réglages : toutes les valeurs chiffrées du jeu vivent ici.
 // Les valeurs des lots suivants s'y ajoutent au fil des lots.
 const SETTINGS = {
-  version: 4,                 // change à chaque mise à jour des images, pour que le téléphone les recharge
+  version: 5,                 // change à chaque mise à jour des images, pour que le téléphone les recharge
   fps: 60,
   dtMaxMs: 100,               // plus long pas de temps accepté entre deux images
 
@@ -18,11 +18,11 @@ const SETTINGS = {
   vitesseMarche: 260,         // unités par seconde
 
   // Endurance (lot 1)
-  enduranceMax: 100,
+  enduranceMax: 150,
   enduranceAttaque: 20,
   enduranceEsquive: 30,
-  enduranceRegenParSeconde: 40,
-  enduranceRegenDelaiMs: 500, // temps sans action avant que l'endurance remonte
+  enduranceRegenParSeconde: 60,
+  enduranceRegenDelaiMs: 400, // temps sans action avant que l'endurance remonte
 
   // Esquive : un déplacement rapide sur le côté
   esquiveMs: 280,
@@ -213,11 +213,23 @@ const SETTINGS = {
     braiseFissure: '255,80,18', // la braise qui court dans l'échine, vers la pointe
     braiseFissureDebut: 0.45, // part de la queue où elle commence
     segments: 18,
-    flamme: {
-      taille: 27, langues: 5, largeur: 0.34, scintillementHz: 11,
-      halo: 2.6, haloAlpha: 0.3, haloCouleur: '200,40,14',
-      couches: ['#4a0a06', '#a82a0a', '#f06a16', '#ffd27a'],
+    flamme: { taille: 27, halo: 2.6, haloAlpha: 0.3, haloCouleur: '200,40,14' },  // lueur au bout de la queue
+    feu: {                    // la flamme est un jet de particules incandescentes
+      parSeconde: 110,         // par queue allumée
+      max: 420,
+      vie: [480, 950],        // ms
+      taille: [4, 9],         // rayon, en unités
+      montee: [95, 175],      // unités par seconde
+      derive: 22,
+      turbulence: 38,
+      turbulenceHz: 3.1,
+      etalement: 6,
+      alpha: 0.42,
+      etirement: 1.8,         // les particules sont étirées vers le haut
+      couleurs: ['255,196,110', '255,126,30', '210,50,14', '90,18,8'],  // du cœur blanc à la cendre rouge
     },
+    eteinteMs: 450,           // temps que met une flamme à mourir
+    fumeeEteinte: 22,         // bouffées de fumée quand une flamme s'éteint
     phase2Facteur: 1.4,       // flammes plus grandes en phase 2
     vacilleFacteur: 0.55,     // et plus faibles quand il vacille
     braisesParSeconde: 5,     // par queue
@@ -228,7 +240,7 @@ const SETTINGS = {
     fumeeVie: 1700,           // ms
     fumeeMonte: 28,
     fumeeTaille: 7,
-    fumeeAlpha: 0.32,
+    fumeeAlpha: 0.55,
     fumeeMax: 60,
   },
 
@@ -274,6 +286,9 @@ const SETTINGS = {
     lignesMin: 1.15,          // début des traits, en rayons de l'étoile
     lignesMax: 3.6,
     lignesEpaisseur: 4,
+    bloqueMs: 80,             // coup du héros sur un boss protégé : quelques étincelles
+    bloqueRayon: 20,
+    bloqueEtincelles: 8,
     simpleMs: 90,             // impact léger : voile blanc, petite étoile et étincelles
     simpleAlpha: 0.4,
     simplePointes: 9,
@@ -290,7 +305,7 @@ const SETTINGS = {
   tremblementCoupRecuPx: 16,
 
   // Sons produits par le code (lot 5) : oscillateur { forme, f0, f1 } ou bruit filtré { bruit, hz, filtre }
-  sonVolume: 0.5,
+  sonVolume: 0.65,
   sons: {
     attaque: [{ bruit: true, filtre: 'highpass', hz: 2500, duree: 0.12, volume: 0.18 }],
     esquive: [{ bruit: true, filtre: 'lowpass', hz: 700, duree: 0.25, volume: 0.2 }],
@@ -316,15 +331,27 @@ const SETTINGS = {
       { bruit: true, filtre: 'lowpass', hz: 900, duree: 0.45, volume: 0.45 },
     ],
     paradeParfaite: [
-      { forme: 'sine', f0: 2100, duree: 0.55, volume: 0.22 },
-      { forme: 'sine', f0: 3150, duree: 0.55, volume: 0.14 },
-      { forme: 'sine', f0: 4720, duree: 0.5, volume: 0.1 },
-      { forme: 'square', f0: 2100, duree: 0.02, volume: 0.3 },
+      { forme: 'sine', f0: 130, f1: 36, duree: 0.55, volume: 0.9 },                       // choc grave
+      { bruit: true, filtre: 'highpass', hz: 1400, duree: 0.14, volume: 0.55 },           // métal qui crisse
+      { forme: 'sine', f0: 1900, duree: 0.9, volume: 0.32 },                              // résonance de la lame
+      { forme: 'sine', f0: 2850, duree: 0.7, volume: 0.22 },
+      { forme: 'sine', f0: 4300, duree: 0.5, volume: 0.15 },
+      { forme: 'square', f0: 2100, duree: 0.02, volume: 0.45 },                           // claquement sec
+      { forme: 'triangle', f0: 640, f1: 600, duree: 0.6, volume: 0.2, retard: 0.02 },
     ],
     paradeSimple: [
-      { forme: 'square', f0: 520, duree: 0.12, volume: 0.15 },
-      { forme: 'square', f0: 780, duree: 0.12, volume: 0.12 },
-      { bruit: true, filtre: 'lowpass', hz: 1800, duree: 0.05, volume: 0.2 },
+      { forme: 'sine', f0: 160, f1: 50, duree: 0.35, volume: 0.8 },
+      { forme: 'square', f0: 420, f1: 360, duree: 0.18, volume: 0.24 },
+      { forme: 'square', f0: 630, f1: 520, duree: 0.16, volume: 0.18 },
+      { bruit: true, filtre: 'bandpass', hz: 900, duree: 0.12, volume: 0.45 },
+    ],
+    flammeEteinte: [
+      { bruit: true, filtre: 'lowpass', hz: 1600, duree: 0.6, volume: 0.4 },              // souffle
+      { forme: 'sine', f0: 320, f1: 55, duree: 0.5, volume: 0.3 },
+    ],
+    coupBloque: [
+      { forme: 'square', f0: 980, f1: 700, duree: 0.07, volume: 0.2 },
+      { bruit: true, filtre: 'highpass', hz: 3000, duree: 0.06, volume: 0.32 },
     ],
     mort: [{ forme: 'sine', f0: 80, f1: 25, duree: 1.0, volume: 0.5 }],
     victoire: [
