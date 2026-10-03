@@ -37,7 +37,7 @@ Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer (et
 - [x] 5. Décor, effets et son
 - [x] 6. Caméra et lisibilité
 - [x] 7. Boss varié et vacillement
-- [ ] 8. Réglage du combat
+- [x] 8. Réglage du combat (premier passage mesuré par simulation, à confirmer en jouant)
 - [ ] 9. Monstres personnalisés
 - [ ] 10. Environnement
 - [ ] 11. Ambiance sonore

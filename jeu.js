@@ -7,7 +7,6 @@ const ctx = canvas.getContext('2d');
 // L'arène a une largeur fixe (S.arenaLargeur). La caméra suit le milieu du duel.
 let d = 1;                // pixels de l'appareil par pixel CSS
 let kui = 1;              // échelle de l'interface
-let decor = null;         // formes du décor, tirées une fois
 let cendres = [];         // cendres, ou braises en phase 2, dans l'image
 let braises = [];         // braises qui montent des flammes : { x, y, vx, vy, t0 }
 let souffles = [];        // buée du héros essoufflé : { x, y, vx, vy, t0 }
@@ -127,7 +126,6 @@ function recommencer() {
 }
 
 window.addEventListener('resize', ajuster);
-genererDecor();
 creerSpritesFeu();
 recommencer();
 jeu.etat = 'depart';
@@ -470,7 +468,7 @@ function majHero(dt) {
   }
 
   hero.x = Math.max(S.heroLargeur / 2, Math.min(S.arenaLargeur - S.heroLargeur / 2, hero.x));
-  if (hero.etat !== 'esquive') sortirDuBoss();
+  if (hero.etat !== 'esquive' && !(boss.etat === 'ruee' && boss.dash)) sortirDuBoss();
 
   if (gt - hero.derniereAction >= S.enduranceRegenDelaiMs) {
     hero.endurance = Math.min(S.enduranceMax, hero.endurance + S.enduranceRegenParSeconde * dt / 1000);
@@ -659,21 +657,30 @@ function majBoss(dt) {
   } else if (boss.etat === 'ruee') {
     const R = S.ruee, A = R.annonceMs * boss.fa;
     if (!boss.dash && boss.t >= A) {
+      // la ruée traverse l'arène : elle dépasse le héros et file jusqu'à l'autre côté
       boss.dir = hero.x >= boss.x ? 1 : -1;
-      const dist = Math.max(0, Math.min(R.distanceMax, Math.abs(hero.x - boss.x) - boss.w / 2 - S.heroLargeur / 2 - R.arret));
-      boss.dash = { de: boss.x, vers: boss.x + boss.dir * dist, t0: boss.t, dernierEcho: -1e9 };
+      const vers = Math.max(boss.w / 2 + 20, Math.min(S.arenaLargeur - boss.w / 2 - 20, hero.x + boss.dir * R.depassement));
+      boss.dash = { de: boss.x, vers, t0: boss.t, ms: Math.max(220, Math.abs(vers - boss.x) / R.vitesse * 1000), dernierEcho: -1e9 };
       jouer('ruee');
     }
     if (boss.dash) {
-      const p = Math.min(1, (boss.t - boss.dash.t0) / R.dashMs);
-      boss.x = boss.dash.de + (boss.dash.vers - boss.dash.de) * (1 - (1 - p) * (1 - p));
-      if (p < 1 && boss.t - boss.dash.dernierEcho >= R.echoMs) { echo(); boss.dash.dernierEcho = boss.t; }
-      if (p >= 1 && !boss.applique) {
+      const d = boss.dash, p = Math.min(1, (boss.t - d.t0) / d.ms);
+      boss.x = d.de + (d.vers - d.de) * p;
+      if (p < 1 && boss.t - d.dernierEcho >= R.echoMs) { echo(); d.dernierEcho = boss.t; }
+      // en passant sur le héros : paré, il s'arrête net ; esquivé, il file derrière lui ; sinon il frappe
+      if (!boss.applique && p < 1 && Math.abs(hero.x - boss.x) <= boss.w / 2 + S.heroLargeur / 2 + R.contact) {
         boss.applique = true;
-        jouer('fauchage');
-        coupDuBoss(R.degats);
+        if (!invulnerable()) {
+          const parade = resultatParade();
+          if (parade) { heroParade(parade); d.vers = boss.x; d.ms = boss.t - d.t0 + 1; }
+          else heroTouche(R.degats * facteurDegats());
+        }
       }
-      if (boss.applique && boss.t >= boss.dash.t0 + R.dashMs + S.fauchageZoneMs) ouverture();
+      if (p >= 1 && !d.fini) {
+        d.fini = true;
+        boss.dir = hero.x >= boss.x ? 1 : -1;
+      }
+      if (d.fini && boss.t >= d.t0 + d.ms + S.fauchageZoneMs * 2) ouverture();
     }
   } else if (boss.etat === 'orbe') {
     const O = S.orbe, A = O.annonceMs * boss.fa, nb = phase2() ? O.phase2Nombre : 1;
@@ -721,55 +728,6 @@ function avancer(dt) {
 // ---------- Dessin ----------
 // ---------- Décor ----------
 // Ruines d'un temple de veilleurs, la nuit : tout est dessiné par le code, plan par plan.
-
-function rng(graine) {
-  let g = graine;
-  return () => {
-    g = (g + 0x6D2B79F5) | 0;
-    let t = Math.imul(g ^ (g >>> 15), 1 | g);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function genererDecor() {
-  const D = S.decor, a = rng(D.graine);
-  const tire = (p) => p[0] + a() * (p[1] - p[0]);
-  const x0 = -D.marge, x1 = S.arenaLargeur + D.marge;
-  const rangee = (c) => {
-    const liste = [];
-    for (let x = x0; x < x1; ) {
-      const e = { x, w: tire(c.largeur), h: tire(c.hauteur), casse: a() < c.casseProba ? a() : -1, arc: a() < c.arcProba };
-      liste.push(e);
-      x += e.w + tire(c.ecart);
-    }
-    return liste;
-  };
-  const P = D.pres, pres = [];
-  for (let x = x0; x < x1; ) {
-    const t = a();
-    if (t < P.statueProba) {
-      pres.push({ type: 'statue', x, w: P.statueTaille * 0.6 });
-      x += P.statueTaille * 0.6;
-    } else if (t < P.statueProba + P.tombeProba) {
-      const w = tire(P.tombeLargeur);
-      pres.push({ type: 'tombe', x, w, h: tire(P.tombeHauteur) });
-      x += w;
-    } else {
-      pres.push({ type: 'grille', x, w: P.grilleLargeur });
-      x += P.grilleLargeur;
-    }
-    x += tire(P.ecart);
-  }
-  const fissures = [];
-  for (let i = 0; i < D.sol.fissures; i++) {
-    const pts = [];
-    let px = x0 + a() * (x1 - x0), py = 8 + a() * 110;
-    for (let k = 0; k < 4; k++) { pts.push([px, py]); px += (a() - 0.5) * D.sol.fissureLongueur; py += a() * 14; }
-    fissures.push(pts);
-  }
-  decor = { lointain: rangee(D.ruine), colonnes: rangee(D.colonnes), pres, fissures };
-}
 
 function genererCendres() {
   cendres = [];
@@ -1003,147 +961,28 @@ function majEffets(dt) {
 }
 
 // ---- Dessin du décor ----
+// Le ciel est une image peinte, calée en haut de l'écran et agrandie pour le couvrir
 function dessinerCiel() {
-  const W = window.innerWidth, H = window.innerHeight, C = S.decor.ciel;
-  const g = ctx.createLinearGradient(0, 0, 0, H * S.solEcranRatio);
-  g.addColorStop(0, C.haut);
-  g.addColorStop(1, C.bas);
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
-  const mx = W * C.lune.x, my = H * C.lune.y, R = C.lune.halo * kui;
-  const h = ctx.createRadialGradient(mx, my, 0, mx, my, R);
-  h.addColorStop(0, `rgba(${C.lune.haloCouleur},${C.lune.haloAlpha})`);
-  h.addColorStop(1, `rgba(${C.lune.haloCouleur},0)`);
-  ctx.fillStyle = h;
-  ctx.fillRect(mx - R, my - R, R * 2, R * 2);
-  ctx.fillStyle = C.lune.couleur;
-  ctx.beginPath();
-  ctx.arc(mx, my, C.lune.rayon * kui, 0, Math.PI * 2);
-  ctx.fill();
-  for (const n of C.nuages) {   // nuages sombres qui voilent la lune
-    ctx.fillStyle = `rgba(14,12,20,${n.alpha})`;
-    ctx.beginPath();
-    ctx.ellipse(W * n.x, H * n.y, n.largeur * kui / 2, n.hauteur * kui / 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  const W = window.innerWidth, H = window.innerHeight, im = images['decor-ciel'];
+  const k = Math.max(W / im.width, H / im.height);
+  ctx.drawImage(im, (W - im.width * k) / 2, 0, im.width * k, im.height * k);
 }
 
-function dessinerRangee(liste, c) {
-  ctx.fillStyle = c.couleur;
-  ctx.strokeStyle = c.couleur;
-  ctx.lineWidth = c.arcEpaisseur;
-  const base = S.solY;
-  for (let i = 0; i < liste.length; i++) {
-    const e = liste[i], haut = base - e.h;
-    ctx.beginPath();
-    ctx.moveTo(e.x, base);
-    if (e.casse >= 0) {   // sommet brisé
-      ctx.lineTo(e.x, haut + e.h * 0.12 * e.casse);
-      ctx.lineTo(e.x + e.w * 0.35, haut + e.h * 0.05);
-      ctx.lineTo(e.x + e.w * 0.6, haut + e.h * (0.1 + 0.1 * e.casse));
-      ctx.lineTo(e.x + e.w, haut);
-    } else {
-      ctx.lineTo(e.x, haut);
-      ctx.lineTo(e.x + e.w, haut);
-    }
-    ctx.lineTo(e.x + e.w, base);
-    ctx.closePath();
-    ctx.fill();
-    if (e.casse < 0) ctx.fillRect(e.x - 5, haut - 8, e.w + 10, 8);   // chapiteau
-    const n = liste[i + 1];
-    if (e.arc && n && e.casse < 0 && n.casse < 0) {
-      const ya = Math.min(haut, base - n.h) + 6, xa = e.x + e.w;
-      ctx.beginPath();
-      ctx.moveTo(xa, ya);
-      ctx.quadraticCurveTo((xa + n.x) / 2, ya - (n.x - xa) * 0.35, n.x, ya);
-      ctx.stroke();
-    }
-  }
-}
-
-function dessinerPres() {
-  const P = S.decor.pres, base = S.solY + 4;
-  ctx.fillStyle = P.couleur;
-  ctx.strokeStyle = P.couleur;
-  for (const e of decor.pres) {
-    if (e.type === 'tombe') {
-      ctx.beginPath();
-      ctx.moveTo(e.x, base);
-      ctx.lineTo(e.x, base - e.h + e.w / 2);
-      ctx.arc(e.x + e.w / 2, base - e.h + e.w / 2, e.w / 2, Math.PI, 0);
-      ctx.lineTo(e.x + e.w, base);
-      ctx.closePath();
-      ctx.fill();
-    } else if (e.type === 'grille') {
-      const n = P.grilleBarres, gh = P.grilleHauteur, pas = e.w / (n - 1);
-      for (let i = 0; i < n; i++) {
-        const x = e.x + i * pas;
-        ctx.fillRect(x - 1.5, base - gh, 3, gh);
-        ctx.beginPath();
-        ctx.moveTo(x - 3.5, base - gh);
-        ctx.lineTo(x, base - gh - 10);
-        ctx.lineTo(x + 3.5, base - gh);
-        ctx.fill();
-      }
-      ctx.fillRect(e.x, base - gh * 0.75, e.w, 3);
-      ctx.fillRect(e.x, base - gh * 0.25, e.w, 3);
-    } else {   // statue de chat assis
-      const s = P.statueTaille, cx = e.x + e.w / 2;
-      ctx.fillRect(cx - s * 0.32, base - s * 0.12, s * 0.64, s * 0.12);
-      ctx.beginPath();
-      ctx.ellipse(cx, base - s * 0.38, s * 0.2, s * 0.28, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(cx, base - s * 0.74, s * 0.15, 0, Math.PI * 2);
-      ctx.fill();
-      for (const sg of [-1, 1]) {
-        ctx.beginPath();
-        ctx.moveTo(cx + sg * s * 0.16, base - s * 0.78);
-        ctx.lineTo(cx + sg * s * 0.13, base - s * 0.95);
-        ctx.lineTo(cx + sg * s * 0.03, base - s * 0.86);
-        ctx.fill();
-      }
-      ctx.lineWidth = s * 0.08;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(cx + s * 0.18, base - s * 0.18);
-      ctx.quadraticCurveTo(cx + s * 0.42, base - s * 0.12, cx + s * 0.34, base - s * 0.34);
-      ctx.stroke();
-    }
-  }
+// Une couche du décor : l'image pose sa base sur la ligne du sol, les plus lointaines bougent le moins
+function dessinerCouche(nom, parallaxe, cx, decalage = 0) {
+  const D = S.decor, im = images[nom];
+  const w = im.width / D.pixelsParUnite, h = im.height / D.pixelsParUnite;
+  ctx.drawImage(im, -D.marge - (cx - S.arenaLargeur / 2) * parallaxe, S.solY + decalage - h, w, h);
 }
 
 function dessinerSol() {
-  const D = S.decor, G = D.sol, x0 = -D.marge, w = S.arenaLargeur + 2 * D.marge, prof = S.hauteurInterface * 4;
-  ctx.fillStyle = G.couleur;
-  ctx.fillRect(x0, S.solY, w, prof);
-  ctx.strokeStyle = G.jointCouleur;
-  ctx.lineWidth = 2;
-  const lim = [0, ...G.joints, G.joints[G.joints.length - 1] + 200];
-  for (let b = 0; b < lim.length - 1; b++) {
-    if (b > 0) {
-      ctx.beginPath();
-      ctx.moveTo(x0, S.solY + lim[b]);
-      ctx.lineTo(x0 + w, S.solY + lim[b]);
-      ctx.stroke();
-    }
-    const pas = G.jointEcart * (1 + G.jointEvase * b);
-    for (let x = x0 + (b % 2 ? pas / 2 : 0); x < x0 + w; x += pas) {
-      ctx.beginPath();
-      ctx.moveTo(x, S.solY + lim[b]);
-      ctx.lineTo(x, S.solY + lim[b + 1]);
-      ctx.stroke();
-    }
-  }
-  ctx.lineWidth = 1.5;
-  for (const pts of decor.fissures) {
-    ctx.beginPath();
-    ctx.moveTo(pts[0][0], S.solY + pts[0][1]);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], S.solY + pts[i][1]);
-    ctx.stroke();
-  }
+  const D = S.decor, im = images['decor-sol'];
+  const w = im.width / D.pixelsParUnite, h = im.height / D.pixelsParUnite;
+  ctx.drawImage(im, -D.marge, S.solY, w, h);
+  ctx.fillStyle = D.solFond;
+  ctx.fillRect(-D.marge, S.solY + h - 1, w, S.hauteurInterface * 4);
   // Le sol est plus clair autour des personnages, la lumière vient des flammes
-  const L = G.lumiere, lx = (hero.x + boss.x) / 2;
+  const L = D.lumiere, lx = (hero.x + boss.x) / 2;
   ctx.save();
   ctx.translate(lx, S.solY + 24);
   ctx.scale(1, L.aplat);
@@ -1155,42 +994,32 @@ function dessinerSol() {
   ctx.restore();
 }
 
+// Nappes de brume : une image tuilée qui défile
 function dessinerBrume(devant) {
   const D = S.decor, x0 = -D.marge, x1 = S.arenaLargeur + D.marge;
   for (const n of D.brume) {
     if (n.devant !== devant) continue;
-    const periode = n.largeur * 0.8;
-    const decalage = (((rt / 1000 * n.vitesse) % periode) + periode) % periode;
-    for (let x = x0 - n.largeur + decalage; x < x1 + n.largeur; x += periode) {
-      ctx.save();
-      ctx.translate(x, S.solY + n.y);
-      ctx.scale(1, n.hauteur / n.largeur);
-      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, n.largeur / 2);
-      g.addColorStop(0, `rgba(${D.brumeCouleur},${n.alpha})`);
-      g.addColorStop(1, `rgba(${D.brumeCouleur},0)`);
-      ctx.fillStyle = g;
-      ctx.fillRect(-n.largeur / 2, -n.largeur / 2, n.largeur, n.largeur);
-      ctx.restore();
-    }
+    const im = images[n.img];
+    const w = im.width / D.pixelsParUnite * n.echelle, h = im.height / D.pixelsParUnite * n.echelle;
+    const dec = (((rt / 1000 * n.vitesse) % w) + w) % w;
+    ctx.globalAlpha = n.alpha;
+    for (let x = x0 - w + dec; x < x1; x += w - 2) ctx.drawImage(im, x, S.solY + n.y - h / 2, w, h);
   }
+  ctx.globalAlpha = 1;
 }
 
-// Silhouettes très sombres au premier plan, devant les personnages, aux deux bouts de l'arène
+// Masses très sombres et floues au premier plan, devant les personnages, aux deux bouts de l'arène
 function dessinerPremierPlan(cx) {
-  const F = S.decor.premierPlan, off = -(cx - S.arenaLargeur / 2) * F.parallaxe;
-  const haut = S.solY - S.hauteurInterface * 2, bas = S.solY + S.hauteurInterface * 2;
+  const D = S.decor, F = D.premierPlan, im = images[F.img];
+  const w = im.width / D.pixelsParUnite, h = im.height / D.pixelsParUnite, off = -(cx - S.arenaLargeur / 2) * F.parallaxe;
+  const y = S.solY + F.bas - h;
   ctx.globalAlpha = F.alpha;
-  for (const cote of [-1, 1]) {
-    const bord = cote < 0 ? F.x + off : S.arenaLargeur - F.x + off;       // bord intérieur du pilier
-    const dehors = bord - cote * F.largeur;
-    ctx.fillStyle = F.couleur;
-    ctx.fillRect(Math.min(bord, dehors) - (cote < 0 ? 400 : 0), haut, F.largeur + 400, bas - haut);
-    const g = ctx.createLinearGradient(bord, 0, bord + cote * F.fondu, 0);
-    g.addColorStop(0, F.couleur);
-    g.addColorStop(1, 'rgba(2,2,4,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(Math.min(bord, bord + cote * F.fondu), haut, F.fondu, bas - haut);
-  }
+  ctx.drawImage(im, -F.x + off, y, w, h);
+  ctx.save();
+  ctx.translate(S.arenaLargeur + F.x + off, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(im, 0, y, w, h);
+  ctx.restore();
   ctx.globalAlpha = 1;
 }
 
@@ -1390,13 +1219,14 @@ function barre(x, y, largeur, part, couleur) {
 const noms = ['heros-attente', 'heros-course', 'heros-esquive', 'heros-attaque1', 'heros-attaque2', 'heros-touche', 'heros-mort',
   'boss-attente', 'boss-marche', 'boss-fauchage', 'boss-incantation', 'boss-sort', 'boss-touche', 'boss-mort',
   'boss2-attente', 'boss2-marche', 'boss2-fauchage', 'boss2-incantation', 'boss2-touche', 'boss2-mort',
-  'fx-parade-parfaite', 'fx-parade-simple', 'fx-degat-heros', 'fx-degat-boss', 'fx-bloque'];
+  'fx-parade-parfaite', 'fx-parade-simple', 'fx-degat-heros', 'fx-degat-boss', 'fx-bloque',
+  'decor-ciel', 'decor-ruine2', 'decor-ruine', 'decor-colonnes', 'decor-pres', 'decor-sol', 'decor-brume1', 'decor-brume2', 'decor-premier-plan'];
 const images = {};
 let chargees = 0;
 for (const nom of noms) {
   const im = new Image();
   im.onload = () => { chargees++; };
-  im.src = `images/${nom}.png?v=${S.version}`;
+  im.src = `images/${nom}.${nom.startsWith('decor') ? 'webp' : 'png'}?v=${S.version}`;
   images[nom] = im;
 }
 const pret = () => chargees === noms.length;
@@ -1454,7 +1284,7 @@ function frameBoss() {
   if (boss.etat === 'ruee') {
     const n = nbFrames(nom('fauchage')), R = S.ruee;
     if (!boss.dash) return [nom('fauchage'), part(boss.t, R.annonceMs * boss.fa, imp - 1)];   // il se ramasse, lames en arrière
-    const fin = boss.dash.t0 + R.dashMs;
+    const fin = boss.dash.t0 + boss.dash.ms;
     if (boss.t < fin) return [nom('fauchage'), imp + 1];                                        // la fente, buste penché
     return [nom('fauchage'), imp + part(boss.t - fin, Z, n - imp)];
   }
@@ -1498,9 +1328,6 @@ function frappeCourante() {
     let k = -1;
     for (let i = 0; i < T.length; i++) if (boss.t >= T[i]) k = i;
     if (k >= 0 && boss.t < T[k] + Z) return { debut: T[k], k };
-  } else if (boss.etat === 'ruee' && boss.dash) {
-    const s = boss.dash.t0 + S.ruee.dashMs;
-    if (boss.t >= s && boss.t < s + Z) return { debut: s, k: 0 };
   }
   return null;
 }
@@ -1588,23 +1415,26 @@ function dessinerEchos() {
   ctx.globalAlpha = 1;
 }
 
-// Orbes magiques : un noyau clair dans un halo violet, la traînée vient des particules
+// Orbes magiques : un noyau noir cerclé de braise, une traînée de feu et de fumée
 function dessinerProjectiles() {
   const O = S.orbe;
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
   for (const p of projectiles) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
     const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, O.halo);
-    g.addColorStop(0, 'rgba(190,150,255,0.55)');
-    g.addColorStop(1, 'rgba(90,40,200,0)');
+    g.addColorStop(0, 'rgba(210,70,20,0.42)');
+    g.addColorStop(1, 'rgba(120,20,8,0)');
     ctx.fillStyle = g;
     ctx.fillRect(p.x - O.halo, p.y - O.halo, O.halo * 2, O.halo * 2);
-    ctx.fillStyle = 'rgba(240,230,255,0.95)';
+    ctx.restore();
+    ctx.fillStyle = '#060304';
     ctx.beginPath();
-    ctx.arc(p.x, p.y, O.rayon * 0.5, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, O.rayon * 0.85, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = 'rgba(255,128,40,0.9)';
+    ctx.lineWidth = 2.4;
+    ctx.stroke();
   }
-  ctx.restore();
 }
 
 // Sprites d'impact : une image toutes les S.fx.imageMs, pour un rendu saccadé
@@ -1663,11 +1493,9 @@ function dessiner() {
     ctx.translate((Math.random() * 2 - 1) * a, (Math.random() * 2 - 1) * a);
   }
   ctx.imageSmoothingEnabled = false;
-  const decale = (p, f) => { ctx.save(); ctx.translate(-(cx - S.arenaLargeur / 2) * p, 0); f(); ctx.restore(); };
-  decale(S.decor.ruine.parallaxe, () => dessinerRangee(decor.lointain, S.decor.ruine));
-  decale(S.decor.colonnes.parallaxe, () => dessinerRangee(decor.colonnes, S.decor.colonnes));
+  for (const c of S.decor.couches) dessinerCouche(c.img, c.parallaxe, cx);
   dessinerSol();
-  decale(S.decor.pres.parallaxe, dessinerPres);
+  dessinerCouche(S.decor.pres.img, S.decor.pres.parallaxe, cx, S.decor.pres.bas);
   dessinerBrume(false);
   dessinerHalo();
 
