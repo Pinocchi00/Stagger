@@ -1,7 +1,7 @@
 // Fichier de réglages : toutes les valeurs chiffrées du jeu vivent ici.
 // Les valeurs des lots suivants s'y ajoutent au fil des lots.
 const SETTINGS = {
-  version: 8,                 // change à chaque mise à jour des images, pour que le téléphone les recharge
+  version: 9,                 // change à chaque mise à jour des images, pour que le téléphone les recharge
   fps: 60,
   dtMaxMs: 100,               // plus long pas de temps accepté entre deux images
 
@@ -38,14 +38,11 @@ const SETTINGS = {
   attaqueImpactRatio: 0.5,    // moment du coup dans l'attaque, en part de sa durée
   enchainementMs: 300,        // temps après une attaque pour enchaîner la deuxième
 
-  // Boss (lot 2)
-  bossNom: 'Grimalkin',
-  bossVie: 400,
-  bossLargeur: 60,
+  // Monstres (lot 9) : tout ce qui définit le boss tient dans une fiche. Pour créer une variante, copier une fiche.
+  // bossActif choisit la fiche jouée ; on peut aussi l'essayer sans toucher au code avec  ?monstre=nom  dans le lien.
+  bossActif: 'grimalkin',
   bossDepartEcart: 500,       // distance entre le héros et le boss au départ
-  bossVitesse: 120,           // marche, unités par seconde
   bossDebutMs: 1000,          // immobilité au début du combat
-  bossOuvertureMs: 800,       // immobilité après chaque attaque : l'ouverture
   bossFlashMs: 120,           // éclat quand il est touché
 
   // Fauchage (lot 2)
@@ -66,8 +63,6 @@ const SETTINGS = {
   doubleDelaiMs: 450,         // délai entre les deux coups du double Fauchage
   sortLoinMinMs: 600,         // marche avant de lancer un Sort de loin, au plus court
   sortLoinMaxMs: 1800,        // et au plus long
-  poids: { fauchage: 4, retarde: 2, double: 2, sort: 2, pluie: 0, orbe: 2, ruee: 2 },   // phase 1
-  poids2: { fauchage: 3, retarde: 2, double: 3, sort: 1, pluie: 3, orbe: 3, ruee: 3 },  // phase 2
   repetitionMax: 2,           // jamais plus de deux fois la même attaque de suite
   lueurFaux: { dx: 23, dy: -56, rayon: 45, alpha: 0.9, pulseHz: 6 }, // lueur du Fauchage retardé
 
@@ -388,4 +383,64 @@ const SETTINGS = {
       { forme: 'sine', f0: 440, duree: 1.2, volume: 0.2, retard: 0.3 },
     ],
   },
+
+  // ---- Fiches de monstre ----
+  // nom, largeur (zone touchée), echelle (taille du sprite), vie, vitesse (marche), rythme (durée des élans : plus petit = plus rapide),
+  // ouvertureMs, poids / poids2 (attaques de la phase 1 et de la phase 2), palette (null : planches telles quelles),
+  // effets (lueur de la tête, cendres ou braises du corps, traînée de la lame), flammes (couleurs des cinq flammes, facultatif)
+  monstres: {
+    grimalkin: {
+      nom: 'Grimalkin', largeur: 60, echelle: 1, vie: 400, vitesse: 120, rythme: 1, ouvertureMs: 800,
+      poids: { fauchage: 4, retarde: 2, double: 2, sort: 2, pluie: 0, orbe: 2, ruee: 2 },
+      poids2: { fauchage: 3, retarde: 2, double: 3, sort: 1, pluie: 3, orbe: 3, ruee: 3 },
+      palette: null,
+      effets: {
+        lueurTete: { couleur: '255,70,30', rayon: 26, alpha: 0.22, pulseHz: 0.9, hauteur: 104 },
+        corps: { couleur: '#b4aab0', parSeconde: 4, vie: 1900, montee: 20, braise: false },
+        trainee: { couleur: '#ecebf5' },
+        phase2: 1.8,
+      },
+    },
+    faucheurCendre: {
+      nom: 'Le Faucheur de cendre', largeur: 66, echelle: 1, vie: 600, vitesse: 85, rythme: 1.18, ouvertureMs: 950,
+      poids: { fauchage: 5, retarde: 3, double: 2, sort: 1, pluie: 0, orbe: 1, ruee: 1 },
+      poids2: { fauchage: 4, retarde: 3, double: 3, sort: 1, pluie: 2, orbe: 2, ruee: 2 },
+      palette: {                                  // gris et os
+        rampe: ['#0e0d0c', '#242320', '#45423c', '#736d62', '#a69d89', '#d5ccb2'],
+        accents: [[255, 80, 20], [255, 210, 120], [255, 150, 60]], tolerance: 90, contraste: [0.05, 0.6],
+      },
+      effets: {
+        lueurTete: { couleur: '210,200,180', rayon: 28, alpha: 0.2, pulseHz: 0.6, hauteur: 104 },
+        corps: { couleur: '#a89f93', parSeconde: 7, vie: 2300, montee: 16, braise: false },
+        trainee: { couleur: '#d8d2c2' },
+        phase2: 1.8,
+      },
+      flammes: { couleurs: ['236,226,206', '190,176,150', '120,108,92', '50,46,40'], couleurs2: ['255,248,232', '220,206,176', '150,136,112', '70,62,52'] },
+    },
+    faucheurBraise: {
+      nom: 'Le Faucheur de braise', largeur: 54, echelle: 1, vie: 300, vitesse: 165, rythme: 0.85, ouvertureMs: 650,
+      poids: { fauchage: 2, retarde: 1, double: 1, sort: 4, pluie: 0, orbe: 4, ruee: 2 },
+      poids2: { fauchage: 1, retarde: 1, double: 2, sort: 3, pluie: 5, orbe: 5, ruee: 3 },
+      palette: {                                  // noir et rouge
+        rampe: ['#040205', '#14070a', '#321014', '#5c1a1a', '#96281f', '#cf4a2e'],
+        accents: [[255, 80, 20], [255, 210, 120], [255, 150, 60]], tolerance: 90, contraste: [0.05, 0.6],
+      },
+      effets: {
+        lueurTete: { couleur: '255,40,20', rayon: 30, alpha: 0.3, pulseHz: 1.3, hauteur: 104 },
+        corps: { couleur: '#ff7a30', parSeconde: 9, vie: 1500, montee: 34, braise: true },
+        trainee: { couleur: '#ff9a70' },
+        phase2: 1.8,
+      },
+      flammes: { couleurs: ['255,170,90', '240,60,28', '170,18,12', '60,6,8'], couleurs2: ['255,210,140', '255,90,40', '200,24,14', '90,10,10'] },
+    },
+  },
+
+  // Le héros a aussi sa fiche : sa palette peut être repeinte de la même façon (null : planches telles quelles)
+  heroFiche: { palette: null },
+
+  // Ombres au sol sous les personnages (lot 9)
+  ombre: { alpha: 0.42, largeurHeros: 1.6, largeurBoss: 1.9, aplat: 0.16 },
+  // Poussière de l'esquive et étincelles des coups du héros (lot 9)
+  poussiere: { nombre: 9, vie: 520, vitesse: 70, taille: 3.2, alpha: 0.45, couleur: '150,140,128' },
+  etincelles: { nombre: 7, vie: 320, vitesse: 190, gravite: 520, longueur: 7, couleur: '255,214,150' },
 };

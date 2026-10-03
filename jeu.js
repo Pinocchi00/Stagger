@@ -1,5 +1,8 @@
 (() => {
 const S = SETTINGS;
+// La fiche du monstre : celle de bossActif, ou celle du lien (?monstre=nom) pour l'essayer sans toucher au code
+const choixLien = new URLSearchParams((window.location && window.location.search) || '').get('monstre');
+const M = S.monstres[choixLien && S.monstres[choixLien] ? choixLien : S.bossActif];
 const canvas = document.getElementById('jeu');
 const ctx = canvas.getContext('2d');
 
@@ -14,13 +17,14 @@ let fumees = [];          // fumée noire au-dessus des flammes : { x, y, vx, vy
 let feux = [];            // particules de feu des flammes : { x, y, vx, vy, t0, vie, s, ph }
 let spritesFeu = {};      // taches lumineuses précalculées : f1 (phase 1), f2 (phase 2), o (orbes)
 let projectiles = [];     // orbes du boss : { x, y, vx, t0 }
+let particules = [];      // cendres du corps, poussière, étincelles : { type, x, y, vx, vy, t0, vie }
 let echos = [];           // images rémanentes du boss pendant ses fentes : { x, dir, nom, f, t0 }
 let fxListe = [];         // sprites d'impact en cours : { nom, x, y, miroir, t0 }
 let flashMeta = -1e9;     // instant du flash de la métamorphose
 let spriteFumee = null;   // tache de fumée douce
 let eclair = -1e9;        // instant du dernier éclair, en temps réel
 
-const boss = { x: 0, w: S.bossLargeur };
+const boss = { x: 0, w: M.largeur };
 const hero = {};
 const jeu = { etat: 'depart', t: 0 }; // depart, combat, mort, victoire
 const cam = { x: 0, z: 1 };           // z : pixels CSS par unité
@@ -93,7 +97,7 @@ function recommencer() {
   Object.assign(boss, {
     x: S.heroDepartX + S.bossDepartEcart,
     dir: -1,
-    vie: S.bossVie,
+    vie: M.vie,
     phase: 1,             // 1 ou 2 : la métamorphose fait passer à la phase 2
     fa: 1,                // facteur de durée des élans de l'attaque en cours
     dash: null,           // fente de la ruée : { de, vers, t0, dernierEcho }
@@ -118,6 +122,7 @@ function recommencer() {
   projectiles = [];
   echos = [];
   fxListe = [];
+  particules = [];
   jeu.etat = 'combat';
   jeu.t = 0;
   const c = cibleCamera();
@@ -221,6 +226,7 @@ function annulerAttaque(source) {
 function esquiver(dir) {
   if (jeu.etat !== 'combat' || hero.endurance <= 0 || hero.etat === 'esquive' || hero.etat === 'touche') return;
   payer(S.enduranceEsquive);
+  poussiere(hero.x, dir);
   jouer('esquive');
   hero.etat = 'esquive';
   hero.t = 0;
@@ -408,9 +414,9 @@ function sortirDuBoss() {
 
 // Palier sous lequel la vie du boss ne peut pas descendre tant que ses cinq flammes ne sont pas éteintes
 function plancherVie() {
-  const milieu = S.bossVie * (1 - S.phase1Part);
+  const milieu = M.vie * (1 - S.phase1Part);
   const eteintes = boss.eteintes >= S.queues.nombre;
-  if (boss.phase === 1) return eteintes ? milieu : S.bossVie;
+  if (boss.phase === 1) return eteintes ? milieu : M.vie;
   return eteintes ? 0 : milieu;
 }
 
@@ -430,6 +436,7 @@ function frapperBoss() {
     if (boss.posture >= S.postureMax) vaciller();
   }
   const cx = hero.x + hero.dir * (S.heroLargeur / 2 + S.attaquePortee * 0.7), cy = S.solY - S.heroHauteur * 0.9;
+  etincelles(cx, cy, hero.dir);
   if (bloque) {
     lancerFx('fx-bloque', cx, cy, hero.dir < 0);
     jouer('coupBloque');
@@ -439,7 +446,7 @@ function frapperBoss() {
   lancerFx('fx-degat-boss', cx, cy, hero.dir < 0);
   impact(S.arretCoupDonneMs, S.tremblementCoupDonneMs, S.tremblementCoupDonnePx);
   jouer('coupDonne');
-  if (boss.phase === 1 && boss.vie <= S.bossVie * (1 - S.phase1Part)) { metamorphoser(); return; }
+  if (boss.phase === 1 && boss.vie <= M.vie * (1 - S.phase1Part)) { metamorphoser(); return; }
   if (boss.vie <= 0) { jeu.etat = 'victoire'; jeu.t = 0; jouer('victoire'); }
 }
 
@@ -451,7 +458,7 @@ function majHero(dt) {
     hero.x += direction() * S.vitesseMarche * dt / 1000;
   } else if (hero.etat === 'esquive') {
     hero.x += hero.esquiveDir * S.esquiveLargeurs * S.heroLargeur * dt / S.esquiveMs;
-    if (hero.t >= S.esquiveMs) { hero.etat = 'libre'; hero.t = 0; }
+    if (hero.t >= S.esquiveMs) { hero.etat = 'libre'; hero.t = 0; poussiere(hero.x, hero.esquiveDir); }
   } else if (hero.etat === 'touche') {
     hero.x += hero.reculDir * hero.reculDist * dt / hero.reculMs;
     if (hero.t >= hero.reculMs) { hero.etat = 'libre'; hero.t = 0; }
@@ -479,12 +486,12 @@ function majHero(dt) {
 const ecart = () => Math.abs(hero.x - boss.x) - boss.w / 2 - S.heroLargeur / 2;
 
 const phase2 = () => boss.phase === 2;
-const facteurAnnonce = () => (phase2() ? S.phase2.annonceFacteur : 1);
+const facteurAnnonce = () => M.rythme * (phase2() ? S.phase2.annonceFacteur : 1);
 const facteurDegats = () => (phase2() ? S.phase2.degatsFacteur : 1);
 
 // Tirage au hasard pondéré, jamais plus de S.repetitionMax fois la même attaque de suite
 function choisirAttaque() {
-  const poids = phase2() ? S.poids2 : S.poids;
+  const poids = phase2() ? M.poids2 : M.poids;
   const h = boss.historique;
   const repete = h.length >= S.repetitionMax && h.slice(-S.repetitionMax).every(n => n === h[h.length - 1]) ? h[h.length - 1] : null;
   const choix = Object.keys(poids).filter(n => n !== repete && poids[n] > 0);
@@ -539,7 +546,7 @@ function lancerBoss(nom) {
 function ouverture() {
   boss.etat = 'ouverture';
   boss.t = 0;
-  boss.duree = phase2() ? S.phase2.ouvertureMs : S.bossOuvertureMs;
+  boss.duree = phase2() ? S.phase2.ouvertureMs : M.ouvertureMs;
   boss.dash = null;
 }
 
@@ -640,7 +647,7 @@ function majBoss(dt) {
     boss.dir = hero.x >= boss.x ? 1 : -1;
     const adistance = ATTAQUES_A_DISTANCE.includes(boss.prochaine);
     if (ecart() <= S.fauchagePortee || (adistance && boss.t >= boss.delaiSort)) lancerBoss(boss.prochaine);
-    else boss.x += boss.dir * S.bossVitesse * (phase2() ? S.phase2.vitesseFacteur : 1) * dt / 1000;
+    else boss.x += boss.dir * M.vitesse * (phase2() ? S.phase2.vitesseFacteur : 1) * dt / 1000;
   } else if (boss.etat === 'fauchage') {
     const temps = tempsFrappes();
     while (boss.frappes < temps.length && boss.t >= temps[boss.frappes]) {
@@ -808,7 +815,8 @@ function creerSpritesFeu() {
     g.fillRect(0, 0, 64, 64);
     return cv;
   });
-  spritesFeu = { f1: fabriquer(S.queues.feu.couleurs), f2: fabriquer(S.queues.feu.couleurs2), o: fabriquer(S.orbe.couleurs) };
+  const fl = M.flammes || S.queues.feu;
+  spritesFeu = { f1: fabriquer(fl.couleurs), f2: fabriquer(fl.couleurs2), o: fabriquer(S.orbe.couleurs) };
   spriteFumee = document.createElement('canvas');
   spriteFumee.width = spriteFumee.height = 64;
   const g = spriteFumee.getContext('2d');
@@ -1223,13 +1231,51 @@ const noms = ['heros-attente', 'heros-course', 'heros-esquive', 'heros-attaque1'
   'decor-ciel', 'decor-ruine2', 'decor-ruine', 'decor-colonnes', 'decor-pres', 'decor-sol', 'decor-brume1', 'decor-brume2', 'decor-premier-plan'];
 const images = {};
 let chargees = 0;
+let repeint = false;      // les planches ont été repeintes d'après la fiche
 for (const nom of noms) {
   const im = new Image();
-  im.onload = () => { chargees++; };
+  im.onload = () => { chargees++; if (chargees === noms.length) repeindreTout(); };
   im.src = `images/${nom}.${nom.startsWith('decor') ? 'webp' : 'png'}?v=${S.version}`;
   images[nom] = im;
 }
-const pret = () => chargees === noms.length;
+const pret = () => repeint;
+
+// Repeint une planche : désaturation, puis remplacement par la rampe de la fiche ; les couleurs d'accent restent
+function repeindre(im, pal) {
+  const cv = document.createElement('canvas');
+  cv.width = im.width;
+  cv.height = im.height;
+  const g = cv.getContext('2d');
+  g.drawImage(im, 0, 0);
+  const img = g.getImageData(0, 0, cv.width, cv.height), px = img.data;
+  const rampe = pal.rampe.map(c => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]);
+  const [lo, hi] = pal.contraste, tol2 = pal.tolerance * pal.tolerance;
+  for (let i = 0; i < px.length; i += 4) {
+    if (px[i + 3] === 0) continue;
+    const r = px[i], gg = px[i + 1], b = px[i + 2];
+    let accent = false;
+    for (const a of pal.accents) {
+      const dr = r - a[0], dg = gg - a[1], db = b - a[2];
+      if (dr * dr + dg * dg + db * db < tol2) { accent = true; break; }
+    }
+    if (accent) continue;
+    const lum = (0.299 * r + 0.587 * gg + 0.114 * b) / 255;
+    const t = Math.max(0, Math.min(1, (lum - lo) / (hi - lo))) * (rampe.length - 1);
+    const k = Math.min(rampe.length - 2, Math.floor(t)), f = t - k;
+    for (let c = 0; c < 3; c++) px[i + c] = rampe[k][c] + (rampe[k + 1][c] - rampe[k][c]) * f;
+  }
+  g.putImageData(img, 0, 0);
+  return cv;
+}
+
+function repeindreTout() {
+  for (const nom of noms) {
+    const estBoss = nom.startsWith('boss') && nom !== 'boss-sort';
+    const pal = estBoss ? M.palette : nom.startsWith('heros') ? S.heroFiche.palette : null;
+    if (pal) images[nom] = repeindre(images[nom], pal);
+  }
+  repeint = true;
+}
 
 // Image et nombre de vignettes d'une planche
 function anim(nom) {
@@ -1297,7 +1343,7 @@ function frameBoss() {
 
 // Dessine la vignette f d'une planche, les pieds posés sur le sol
 function dessinerSprite(im, f, x, miroir, sp, pivotX = sp.pivotX) {
-  const e = S.echelleSprite;
+  const e = S.echelleSprite * (sp === S.bossSprite ? M.echelle : 1);
   ctx.save();
   ctx.translate(x, S.solY);
   if (miroir) ctx.scale(-1, 1);
@@ -1348,7 +1394,7 @@ function dessinerArc() {
   ctx.beginPath();
   ctx.rect(-S.decor.marge, -S.hauteurInterface * 4, S.arenaLargeur + 2 * S.decor.marge, S.hauteurInterface * 4 + S.solY);
   ctx.clip();
-  ctx.strokeStyle = S.arcCouleur;
+  ctx.strokeStyle = M.effets.trainee.couleur;
   ctx.lineCap = 'round';
   const n = S.arcSegments;
   for (let i = 0; i < n; i++) {
@@ -1406,6 +1452,98 @@ function dessinerRunes(m) {
 }
 
 // Images rémanentes du boss pendant ses fentes
+// Ombre douce sous un personnage, posée sur les dalles
+function dessinerOmbre(x, largeur) {
+  const O = S.ombre, rx = largeur / 2;
+  ctx.save();
+  ctx.translate(x, S.solY + 3);
+  ctx.scale(1, O.aplat);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+  g.addColorStop(0, `rgba(0,0,0,${O.alpha})`);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(-rx, -rx, rx * 2, rx * 2);
+  ctx.restore();
+}
+
+// Lueur qui pulse au niveau de la tête du boss, plus vive en phase 2
+function dessinerLueurTete() {
+  if (jeu.etat === 'victoire') return;
+  const E = M.effets, L = E.lueurTete, f = phase2() ? E.phase2 : 1;
+  const pulse = 0.65 + 0.35 * Math.sin(rt / 1000 * Math.PI * 2 * L.pulseHz * (phase2() ? 1.5 : 1));
+  const x = boss.x, y = S.solY - L.hauteur * M.echelle;
+  const R = L.rayon * f;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x, y, 0, x, y, R * 2.4);
+  g.addColorStop(0, `rgba(${L.couleur},${L.alpha * pulse * Math.min(1.6, f)})`);
+  g.addColorStop(1, `rgba(${L.couleur},0)`);
+  ctx.fillStyle = g;
+  ctx.fillRect(x - R * 2.4, y - R * 2.4, R * 4.8, R * 4.8);
+  ctx.restore();
+}
+
+// Particules du lot 9 : cendres ou braises du corps du boss, poussière de l'esquive, étincelles des coups
+
+function poussiere(x, sens) {
+  const P = S.poussiere;
+  for (let k = 0; k < P.nombre; k++) {
+    particules.push({ type: 'poussiere', x: x + (Math.random() - 0.5) * 16, y: S.solY - 2 - Math.random() * 5,
+      vx: -sens * P.vitesse * (0.3 + Math.random()) , vy: -10 - Math.random() * 26, t0: rt, vie: P.vie * (0.6 + Math.random() * 0.6) });
+  }
+}
+
+function etincelles(x, y, sens) {
+  const E = S.etincelles;
+  for (let k = 0; k < E.nombre; k++) {
+    const a = (Math.random() - 0.5) * 2.2 - (sens > 0 ? 0 : Math.PI) * 0;
+    particules.push({ type: 'etincelle', x, y, vx: (-sens) * Math.cos(a) * E.vitesse * (0.4 + Math.random()), vy: Math.sin(a) * E.vitesse * (0.8 + Math.random()) - 40,
+      t0: rt, vie: E.vie * (0.6 + Math.random() * 0.7) });
+  }
+}
+
+function majParticules(dt) {
+  const E = M.effets.corps, f = phase2() ? M.effets.phase2 : 1;
+  if (jeu.etat === 'combat' && boss.etat !== 'meta' && particules.length < 220) {
+    for (let reste = E.parSeconde * f * dt / 1000; reste > 0; reste--) {
+      if (Math.random() < Math.min(1, reste)) {
+        particules.push({ type: 'corps', x: boss.x + (Math.random() - 0.5) * boss.w * 1.2, y: S.solY - 18 - Math.random() * 100 * M.echelle,
+          vx: (Math.random() - 0.5) * 12, vy: -E.montee * (0.6 + Math.random() * 0.8), t0: rt, vie: E.vie * (0.6 + Math.random() * 0.7) });
+      }
+    }
+  }
+  particules = particules.filter(p => rt - p.t0 < p.vie);
+  for (const p of particules) {
+    p.x += p.vx * dt / 1000;
+    p.y += p.vy * dt / 1000;
+    if (p.type === 'etincelle') p.vy += S.etincelles.gravite * dt / 1000;
+  }
+}
+
+function dessinerParticules() {
+  const C = M.effets.corps, P = S.poussiere, E = S.etincelles;
+  for (const p of particules) {
+    const a = 1 - (rt - p.t0) / p.vie;
+    if (p.type === 'poussiere') {
+      ctx.fillStyle = `rgba(${P.couleur},${P.alpha * a})`;
+      const t = P.taille * (1.6 - a);
+      ctx.fillRect(p.x - t, p.y - t, t * 2, t * 2);
+    } else if (p.type === 'etincelle') {
+      ctx.strokeStyle = `rgba(${E.couleur},${a})`;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - p.vx * 0.03, p.y - p.vy * 0.03);
+      ctx.stroke();
+    } else {
+      ctx.globalAlpha = a * (C.braise ? 0.95 : 0.5);
+      ctx.fillStyle = C.couleur;
+      ctx.fillRect(p.x, p.y, 2, 2);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
 function dessinerEchos() {
   echos = echos.filter(e => rt - e.t0 < S.ruee.echoVieMs);
   for (const e of echos) {
@@ -1507,6 +1645,8 @@ function dessiner() {
     dessinerSprite(im, f, m.x, false, S.bossSprite, S.sortPivotX);
   }
 
+  dessinerOmbre(boss.x, boss.w * S.ombre.largeurBoss * M.echelle * 2);
+  dessinerOmbre(hero.x, S.heroLargeur * S.ombre.largeurHeros * 1.6);
   dessinerEchos();
   dessinerQueues();
   const [nomB, fb] = frameBoss();
@@ -1517,6 +1657,7 @@ function dessiner() {
   ctx.translate(-boss.x, -S.solY);
   dessinerSprite(images[nomB], fb, boss.x, boss.dir > 0, S.bossSprite);
   ctx.restore();
+  dessinerLueurTete();
   dessinerLueur();
   dessinerArc();
 
@@ -1534,6 +1675,7 @@ function dessiner() {
 
   dessinerProjectiles();
   dessinerFx();
+  dessinerParticules();
   dessinerParticulesMonde();
   dessinerBrume(true);
   dessinerPremierPlan(cx);
@@ -1553,8 +1695,8 @@ function dessiner() {
   ctx.font = `${S.nomTaille}px Georgia, serif`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
-  ctx.fillText(S.bossNom, bx, by - S.barreEspace / 2);
-  barre(bx, by, S.bossBarreLargeur, boss.vie / S.bossVie, '#a33');
+  ctx.fillText(M.nom, bx, by - S.barreEspace / 2);
+  barre(bx, by, S.bossBarreLargeur, boss.vie / M.vie, '#a33');
   ctx.fillStyle = '#000';
   ctx.fillRect(bx + S.bossBarreLargeur * (1 - S.phase1Part) - 1.5, by - 4, 3, S.barreHauteur + 8);
   ctx.fillStyle = S.postureCouleur;
@@ -1585,6 +1727,7 @@ function boucle(now) {
     avancer(dt);
     majCamera(dt);
     majEffets(dt);
+    majParticules(dt);
   }
   dessiner();
 }

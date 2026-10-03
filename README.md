@@ -18,6 +18,8 @@ Le jeu se joue dans le navigateur, téléphone tenu à l'horizontale.
 
 **Les deux phases.** Grimalkin porte cinq queues enflammées. Tant qu'une flamme brûle, ses coups ne l'atteignent pas : chaque parade en éteint une, et il faut les cinq pour pouvoir le blesser. Les cinq éteintes, la moitié de sa vie peut tomber. À la moitié, il se métamorphose : ses flammes se rallument, une seconde lame apparaît, il frappe deux fois plus vite, et il faut de nouveau parer cinq fois avant de finir le combat.
 
+**Les monstres.** Tout ce qui définit le boss tient dans une fiche de `settings.js` (`monstres`) : nom, taille, vie, vitesse, palette, effets, attaques et leur poids. Trois fiches sont livrées : `grimalkin`, `faucheurCendre` (lent et endurant, gris et os) et `faucheurBraise` (rapide et fragile, noir et rouge, plus de sorts). `bossActif` choisit la fiche jouée ; pour l'essayer sans rien modifier, ajouter `?monstre=faucheurBraise` à la fin du lien. Pour créer une variante, copier une fiche et changer ses valeurs.
+
 Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer (et parer), Maj pour esquiver.
 
 ## Tester sur téléphone
@@ -38,7 +40,7 @@ Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer (et
 - [x] 6. Caméra et lisibilité
 - [x] 7. Boss varié et vacillement
 - [x] 8. Réglage du combat (premier passage mesuré par simulation, à confirmer en jouant)
-- [ ] 9. Monstres personnalisés
+- [x] 9. Monstres personnalisés
 - [ ] 10. Environnement
 - [ ] 11. Ambiance sonore
 - [ ] 12. Mise en scène
