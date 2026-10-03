@@ -23,7 +23,15 @@ let fxListe = [];         // sprites d'impact en cours : { nom, x, y, miroir, t0
 let lumieresTemps = [];   // lumières brèves : { x, y, regle, t0 }
 let cartes = null;        // cartes de lumière : { ambiante, lueur }
 let ambianceT = 0;        // 0 : ambiance de la phase 1, 1 : phase 2
-let flashMeta = -1e9;     // instant du flash de la métamorphose
+let flashMeta = -1e9;
+let ralenti = null;       // ralenti en cours : { t0, ms, facteur }, en temps réel
+let scene = null;         // scène de caméra en cours : { type, t0, ms, zoom }
+let kicks = [];           // petits à-coups de zoom : { delta, t0, ms }
+let bandes = 0;           // bandes noires : 0 absentes, 1 en place
+let introFaite = false;   // l'entrée du boss n'a lieu qu'à la première tentative
+let essaiDebut = 0;       // début du combat en cours, en temps réel
+let morts = 0;            // morts depuis le début de la partie
+let stats = null;         // chiffres affichés à la victoire     // instant du flash de la métamorphose
 let spriteFumee = null;   // tache de fumée douce
 let eclair = -1e9;        // instant du dernier éclair, en temps réel
 
@@ -49,12 +57,49 @@ function zoomDeBase() {
   return n / S.echelleSprite / d;
 }
 
+// Enveloppe 0 -> 1 -> 0 : monte en `montee` ms, redescend sur les `descente` dernières ms
+function enveloppe(age, ms, montee, descente) {
+  if (age < 0 || age > ms) return 0;
+  return Math.max(0, Math.min(1, age / montee, (ms - age) / descente));
+}
+
 function cibleCamera() {
   const W = window.innerWidth;
   const zBase = zoomDeBase();
   const zMin = W / S.arenaLargeur;
   const ecartX = Math.abs(hero.x - boss.x) + 2 * S.camBordUnites;
-  return { x: (hero.x + boss.x) / 2, z: Math.max(zMin, Math.min(zBase, W / ecartX)) };
+  const milieu = (hero.x + boss.x) / 2;
+  let x = milieu, z = Math.max(zMin, Math.min(zBase, W / ecartX));
+  const I = S.mise.intro;
+  if (jeu.etat === 'intro') {
+    // la caméra part du héros, glisse jusqu'au boss, puis revient au milieu du duel
+    const f = Math.max(0, Math.min(1, (jeu.t - I.glisseDebut) / (I.glisseFin - I.glisseDebut)));
+    const retour = Math.max(0, Math.min(1, (jeu.t - I.retourDebut) / (I.ms - I.retourDebut)));
+    const e = f * f * (3 - 2 * f);
+    const sur = hero.x + (boss.x - hero.x) * e;
+    x = sur + (milieu - sur) * retour;
+    z = Math.max(zMin, zBase * (1 + I.zoom * e * (1 - retour)));
+  } else if (scene) {
+    const w = scene.type === 'meta' ? enveloppe(rt - scene.t0, scene.ms, 220, S.mise.meta.relacheMs) : enveloppe(rt - scene.t0, scene.ms, 120, 160);
+    x = milieu + (boss.x - milieu) * w;
+    z *= 1 + scene.zoom * w;
+  }
+  return { x, z };
+}
+
+// Petit zoom (delta > 0 : on s'approche) qui s'efface en ms
+function kickCamera(delta, ms) {
+  kicks.push({ delta, t0: rt, ms });
+  if (kicks.length > 8) kicks.shift();
+}
+
+// Ralenti : le temps du monde passe à `facteur` pendant ms, puis reprend en douceur
+function echelleTemps() {
+  if (!ralenti) return 1;
+  const age = rt - ralenti.t0;
+  if (age >= ralenti.ms) { ralenti = null; return 1; }
+  const retour = Math.max(0, Math.min(1, (age - (ralenti.ms - 160)) / 160));
+  return ralenti.facteur + (1 - ralenti.facteur) * retour;
 }
 
 function ajuster() {
@@ -71,8 +116,9 @@ function ajuster() {
 
 function majCamera(dt) {
   const c = cibleCamera();
-  cam.x += (c.x - cam.x) * (1 - Math.exp(-S.camLisseParSeconde * dt / 1000));
-  cam.z += (c.z - cam.z) * (1 - Math.exp(-S.camZoomLisseParSeconde * dt / 1000));
+  const vif = scene && rt - scene.t0 < scene.ms ? 4 : 1;   // pendant une scène, la caméra obéit plus vite
+  cam.x += (c.x - cam.x) * (1 - Math.exp(-S.camLisseParSeconde * vif * dt / 1000));
+  cam.z += (c.z - cam.z) * (1 - Math.exp(-S.camZoomLisseParSeconde * vif * dt / 1000));
 }
 
 function recommencer() {
@@ -131,6 +177,11 @@ function recommencer() {
   ambianceT = 0;
   jeu.etat = 'combat';
   jeu.t = 0;
+  jeu.treel = 0;
+  ralenti = null;
+  scene = null;
+  kicks = [];
+  essaiDebut = rt;
   const c = cibleCamera();
   cam.x = c.x;
   cam.z = c.z;
@@ -401,6 +452,7 @@ function esquiver(dir) {
 function heroTouche(degats) {
   if (invulnerable()) return;
   hero.vie = Math.max(0, hero.vie - degats);
+  if (hero.vie <= 0) { morts++; ralenti = { t0: rt, ms: S.mortMs, facteur: S.mise.mort.facteur }; }
   lumiereBreve('coupRecu', hero.x, S.solY - S.heroHauteur * 0.55);
   lancerFx('fx-degat-heros', hero.x, S.solY - S.heroHauteur * 0.55, boss.x > hero.x);
   impact(S.arretCoupRecuMs, S.tremblementCoupRecuMs, S.tremblementCoupRecuPx);
@@ -502,7 +554,7 @@ function direction() {
 }
 
 function relancer() {
-  if (jeu.etat === 'victoire' && jeu.t >= S.victoireAttenteMs) recommencer();
+  if (jeu.etat === 'victoire' && jeu.treel >= S.victoireAttenteMs) recommencer();
 }
 
 // Plein écran et écran à l'horizontale, demandés au premier geste : les navigateurs l'exigent.
@@ -521,8 +573,11 @@ function pleinEcran() {
 
 function demarrer() {
   if (jeu.etat !== 'depart' || portrait()) return false;
-  jeu.etat = 'combat';
   jeu.t = 0;
+  jeu.treel = 0;
+  jeu.sonEntree = false;
+  if (introFaite) { jeu.etat = 'combat'; essaiDebut = rt; }
+  else { jeu.etat = 'intro'; introFaite = true; }   // l'entrée du boss n'a lieu qu'à la première tentative
   return true;
 }
 
@@ -619,11 +674,22 @@ function frapperBoss() {
   impact(S.arretCoupDonneMs, S.tremblementCoupDonneMs, S.tremblementCoupDonnePx);
   jouer('coupDonne');
   if (boss.phase === 1 && boss.vie <= M.vie * (1 - S.phase1Part)) { metamorphoser(); return; }
-  if (boss.vie <= 0) { jeu.etat = 'victoire'; jeu.t = 0; jouer('victoire'); }
+  kickCamera(S.mise.kicks.coupDonne.delta, S.mise.kicks.coupDonne.ms);
+  if (boss.vie <= 0) {
+    // coup fatal : ralenti, zoom sur le boss, son coupé
+    const F = S.mise.fatal;
+    ralenti = { t0: rt, ms: F.ms, facteur: F.facteur };
+    scene = { type: 'fatal', t0: rt, ms: F.ms, zoom: F.zoom };
+    stats = { temps: rt - essaiDebut, essais: morts + 1 };
+    jeu.etat = 'victoire';
+    jeu.t = 0;
+    jeu.treel = 0;
+  }
 }
 
 function majHero(dt) {
   hero.dir = boss.x >= hero.x ? 1 : -1;
+  if (boss.etat === 'meta' && !boss.metaFait) return;   // le combat se fige
   hero.t += dt;
 
   if (hero.etat === 'libre') {
@@ -706,6 +772,7 @@ function lancerBoss(nom) {
   boss.etat = fauchage ? 'fauchage' : nom === 'ruee' ? 'ruee' : nom === 'orbe' ? 'orbe' : 'sort';
   boss.variante = nom === 'fauchage' ? 'normal' : nom;
   boss.fa = facteurAnnonce();
+  kickCamera(S.mise.kicks.attaqueBoss.delta, S.mise.kicks.attaqueBoss.ms);
   boss.t = 0;
   boss.frappes = 0;
   boss.retourne = false;
@@ -725,6 +792,9 @@ function ouverture() {
 
 // Le coup du héros qui remplit la posture interrompt l'attaque en cours
 function vaciller() {
+  const V = S.mise.vacille;
+  ralenti = { t0: rt, ms: V.ms, facteur: V.facteur };
+  scene = { type: 'vacille', t0: rt, ms: V.ms, zoom: V.zoom };
   boss.etat = 'vacille';
   boss.t = 0;
   boss.posture = 0;
@@ -735,6 +805,7 @@ function vaciller() {
 
 // À la moitié de sa vie, le boss se métamorphose : ses flammes se rallument, une seconde lame apparaît
 function metamorphoser() {
+  scene = { type: 'meta', t0: rt, ms: S.meta.changeMs + S.mise.meta.relacheMs, zoom: S.mise.meta.zoom };
   boss.etat = 'meta';
   boss.t = 0;
   boss.marques = [];
@@ -896,10 +967,17 @@ function majBoss(dt) {
 
 function avancer(dt) {
   if (arret > 0) { arret -= dt; return; }
+  const reel = dt;
+  dt *= echelleTemps();
   gt += dt;
   if (jeu.etat !== 'combat') {
     jeu.t += dt;
-    if (jeu.etat === 'mort' && jeu.t >= S.mortMs) recommencer();
+    jeu.treel += reel;
+    if (jeu.etat === 'mort' && jeu.treel >= S.mortMs) recommencer();
+    if (jeu.etat === 'intro') {
+      if (!jeu.sonEntree && jeu.t >= S.mise.intro.sonMs) { jeu.sonEntree = true; jouer('entreeBoss', boss.x); jouer('rale', boss.x); }
+      if (jeu.t >= S.mise.intro.ms) { jeu.etat = 'combat'; jeu.t = 0; essaiDebut = rt; }
+    }
     return;
   }
   majHero(dt);
@@ -1484,6 +1562,12 @@ function frameBoss() {
   const nom = (n) => pre + '-' + n;
   const imp = S.fauchageFrameImpact, Z = S.fauchageZoneMs;
   if (jeu.etat === 'victoire') return [nom('mort'), part(jeu.t, S.bossMortMs, nbFrames(nom('mort')))];
+  if (jeu.etat === 'intro') {          // le boss se redresse : courbé, puis les bras se lèvent, puis il se tient droit
+    const I = S.mise.intro;
+    if (jeu.t < I.releveDebut) return [nom('touche'), 1];
+    if (jeu.t < I.releveDebut + I.releveMs) return [nom('incantation'), part(jeu.t - I.releveDebut, I.releveMs, nbFrames(nom('incantation')))];
+    return [nom('attente'), boucle_(nbFrames(nom('attente')))];
+  }
   if (boss.etat === 'meta') {
     if (boss.t < S.meta.changeMs) return [nom('touche'), boucle_(nbFrames(nom('touche')))];
     return [nom('incantation'), part(boss.t - S.meta.changeMs, S.meta.ms - S.meta.changeMs, nbFrames(nom('incantation')))];
@@ -1812,6 +1896,14 @@ function majParticules(dt) {
       }
     }
   }
+  if (jeu.etat === 'victoire' && jeu.treel < S.mise.victoire.cendresMs && particules.length < 400) {
+    for (let reste = S.mise.victoire.cendresParSeconde * dt / 1000; reste > 0; reste--) {
+      if (Math.random() < Math.min(1, reste)) {
+        particules.push({ type: 'cendreMort', x: boss.x + (Math.random() - 0.5) * boss.w * 1.6, y: S.solY - 8 - Math.random() * 120 * M.echelle,
+          vx: (Math.random() - 0.5) * 40, vy: -20 - Math.random() * 40, t0: rt, vie: 1300 + Math.random() * 1200 });
+      }
+    }
+  }
   particules = particules.filter(p => rt - p.t0 < p.vie);
   for (const p of particules) {
     p.x += p.vx * dt / 1000;
@@ -1828,6 +1920,9 @@ function dessinerParticules() {
       ctx.fillStyle = `rgba(${P.couleur},${P.alpha * a})`;
       const t = P.taille * (1.6 - a);
       ctx.fillRect(p.x - t, p.y - t, t * 2, t * 2);
+    } else if (p.type === 'cendreMort') {
+      ctx.fillStyle = `rgba(150,142,134,${0.8 * a})`;
+      ctx.fillRect(p.x, p.y, 2.6, 2.6);
     } else if (p.type === 'etincelle') {
       ctx.strokeStyle = `rgba(${E.couleur},${a})`;
       ctx.lineWidth = 1.6;
@@ -1921,7 +2016,9 @@ function dessiner() {
   if (!pret()) return;
 
   // Monde, vu par la caméra
-  const z = cam.z;
+  let kick = 1;
+  for (const k of kicks) kick *= 1 + k.delta * Math.max(0, 1 - (rt - k.t0) / k.ms);
+  const z = cam.z * kick;
   const demi = W / z / 2;
   const cx = S.arenaLargeur <= demi * 2 ? S.arenaLargeur / 2 : Math.max(demi, Math.min(S.arenaLargeur - demi, cam.x));
   ctx.save();
@@ -1988,30 +2085,102 @@ function dessiner() {
   dessinerLumieres(cx);
   if (!imageBlanche) dessinerAtmosphere();
 
+  // Bandes noires : entrée du boss, vacillement, métamorphose, coup fatal
+  const veutBandes = jeu.etat === 'intro' ? (jeu.t < S.mise.intro.ms - 350 ? 1 : 0) : (scene && rt - scene.t0 < scene.ms ? 1 : 0);
+  bandes += (veutBandes - bandes) * 0.2;
+  if (bandes > 0.01) {
+    ctx.fillStyle = '#000';
+    const hb = H * S.mise.bandes * bandes;
+    ctx.fillRect(0, 0, W, hb);
+    ctx.fillRect(0, H - hb, W, hb);
+  }
+
+  // Mort du héros : l'image perd ses couleurs
+  if (jeu.etat === 'mort') {
+    ctx.save();
+    ctx.globalCompositeOperation = 'saturation';
+    ctx.globalAlpha = Math.min(1, jeu.treel / S.mise.mort.grisMs);
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
   // Interface : seule la vie du boss est affichée, la vie et l'endurance du héros se lisent dans l'image
   ctx.setTransform(d * kui, 0, 0, d * kui, 0, 0);
   const wi = W / kui, hi = H / kui;
   const bx = (wi - S.bossBarreLargeur) / 2;
   const by = hi - S.bossBarreBas;
-  ctx.fillStyle = '#bbb';
-  ctx.font = `${S.nomTaille}px Georgia, serif`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'bottom';
-  ctx.fillText(M.nom, bx, by - S.barreEspace / 2);
-  barre(bx, by, S.bossBarreLargeur, boss.vie / M.vie, '#a33');
-  ctx.fillStyle = '#000';
-  ctx.fillRect(bx + S.bossBarreLargeur * (1 - S.phase1Part) - 1.5, by - 4, 3, S.barreHauteur + 8);
-  ctx.fillStyle = S.postureCouleur;
-  ctx.fillRect(bx, by + S.barreHauteur + S.barreEspace / 2, S.bossBarreLargeur * Math.min(1, boss.posture / S.postureMax), S.postureHauteur);
-
-  // Départ, mort et victoire
-  if (jeu.etat !== 'combat') {
-    const mort = jeu.etat === 'mort';
-    ctx.fillStyle = `rgba(0,0,0,${mort ? Math.min(1, jeu.t / S.mortMs) : 0.6})`;
-    ctx.fillRect(0, 0, wi, hi);
-    ctx.setTransform(d, 0, 0, d, 0, 0);
-    texteCentre(jeu.etat === 'depart' ? 'Touche pour commencer' : mort ? 'Mort' : 'Victoire', S.texteTaille * kui);
+  if (jeu.etat !== 'intro' && jeu.etat !== 'depart') {
+    ctx.fillStyle = '#bbb';
+    ctx.font = `${S.nomTaille}px Georgia, serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(M.nom, bx, by - S.barreEspace / 2);
+    barre(bx, by, S.bossBarreLargeur, boss.vie / M.vie, '#a33');
+    ctx.fillStyle = '#000';
+    ctx.fillRect(bx + S.bossBarreLargeur * (1 - S.phase1Part) - 1.5, by - 4, 3, S.barreHauteur + 8);
+    ctx.fillStyle = S.postureCouleur;
+    ctx.fillRect(bx, by + S.barreHauteur + S.barreEspace / 2, S.bossBarreLargeur * Math.min(1, boss.posture / S.postureMax), S.postureHauteur);
   }
+
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  if (jeu.etat === 'depart') dessinerTitre();
+  if (jeu.etat === 'intro') dessinerNomBoss();
+  if (jeu.etat === 'mort') {
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(1, jeu.treel / S.mortMs) * 0.9})`;
+    ctx.fillRect(0, 0, W, H);
+    texteEspace(S.mise.mort.texte, W / 2, H / 2, S.mise.mort.taille * kui, '#b8a8a0', 0.3, Math.min(1, jeu.treel / 300));
+  }
+  if (jeu.etat === 'victoire' && jeu.treel >= S.mise.victoire.statsDebutMs) dessinerStatsVictoire();
+}
+
+// Texte aux lettres espacées, centré en (x, y)
+function texteEspace(texte, x, y, taille, couleur, espace, alpha = 1, lueur = null) {
+  ctx.save();
+  ctx.font = `bold ${taille}px Georgia, serif`;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  const largeurs = [...texte].map(c => ctx.measureText(c).width + taille * espace);
+  let total = largeurs.reduce((a, b) => a + b, 0) - taille * espace;
+  let cx = x - total / 2;
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = couleur;
+  if (lueur) { ctx.shadowColor = lueur; ctx.shadowBlur = taille * 0.35; }
+  [...texte].forEach((c, i) => { ctx.fillText(c, cx, y); cx += largeurs[i]; });
+  ctx.restore();
+}
+
+function dessinerTitre() {
+  const W = window.innerWidth, H = window.innerHeight, T = S.mise.titre;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, W, H);
+  texteEspace(T.texte, W / 2, H * 0.36, T.taille * kui, T.couleur, T.espace, 1, T.lueur);
+  const pulse = 0.55 + 0.45 * Math.sin(rt / 1000 * Math.PI * 2 * T.pulseHz);
+  texteEspace(T.invite, W / 2, H * 0.72, T.inviteTaille * kui, '#c9c1b2', 0.08, pulse);
+}
+
+// Le nom du boss s'affiche pendant son entrée, entre les bandes noires
+function dessinerNomBoss() {
+  const W = window.innerWidth, H = window.innerHeight, I = S.mise.intro;
+  const a = enveloppe(jeu.t - I.nomDebut, I.nomMs, 400, 400);
+  if (a <= 0) return;
+  texteEspace(M.nom.toUpperCase(), W / 2, H * (1 - S.mise.bandes * 2.2), I.nomTaille * kui, '#d9d1c1', I.nomEspace, a, 'rgba(200,40,20,0.6)');
+}
+
+function formatTemps(ms) {
+  const t = Math.round(ms / 100) / 10, m = Math.floor(t / 60), s = (t - m * 60).toFixed(1);
+  return `${m}:${s.padStart(4, '0')}`;
+}
+
+// Victoire : le boss est en cendres, le silence tombe, puis les chiffres s'affichent
+function dessinerStatsVictoire() {
+  const W = window.innerWidth, H = window.innerHeight, V = S.mise.victoire;
+  const a = Math.min(1, (jeu.treel - V.statsDebutMs) / 600);
+  ctx.fillStyle = `rgba(0,0,0,${0.55 * a})`;
+  ctx.fillRect(0, 0, W, H);
+  texteEspace(V.texte, W / 2, H * 0.4, V.taille * kui, '#d9d1c1', 0.22, a, 'rgba(255,110,40,0.5)');
+  texteEspace(`Temps ${formatTemps(stats.temps)}`, W / 2, H * 0.58, 30 * kui, '#c9c1b2', 0.08, a);
+  texteEspace(`Tentatives ${stats.essais}`, W / 2, H * 0.67, 30 * kui, '#c9c1b2', 0.08, a);
 }
 
 // ---------- Boucle ----------

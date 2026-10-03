@@ -1,7 +1,7 @@
 // Fichier de réglages : toutes les valeurs chiffrées du jeu vivent ici.
 // Les valeurs des lots suivants s'y ajoutent au fil des lots.
 const SETTINGS = {
-  version: 11,                 // change à chaque mise à jour des images, pour que le téléphone les recharge
+  version: 12,                 // change à chaque mise à jour des images, pour que le téléphone les recharge
   fps: 60,
   dtMaxMs: 100,               // plus long pas de temps accepté entre deux images
 
@@ -99,7 +99,23 @@ const SETTINGS = {
   orbe: { annonceMs: 700, vitesse: 380, phase2Vitesse: 1.3, degats: 30, rayon: 14, hauteur: 46, phase2Nombre: 3, ecartMs: 260, recupMs: 350,
           particulesParSeconde: 130, couleurs: ['255,190,110', '235,90,28', '130,26,12', '30,10,8'], halo: 34 },
   // Métamorphose : le boss se transforme à la moitié de sa vie
-  meta: { ms: 3400, changeMs: 1500, tremblementPx: 4, arretMs: 100, flashMs: 380, explosion: 22 },
+  meta: { ms: 2400, changeMs: 1500, tremblementPx: 4, arretMs: 100, flashMs: 380, explosion: 22 },
+  // Mise en scène (lot 12)
+  mise: {
+    bandes: 0.115,              // hauteur des bandes noires, en part de l'écran
+    bandesMs: 220,              // temps qu'elles mettent à arriver ou à partir
+    titre: { texte: 'STAGGER', taille: 104, espace: 0.2, couleur: '#d9d1c1', lueur: 'rgba(255,110,40,0.55)',
+             invite: 'Touche pour commencer', inviteTaille: 30, pulseHz: 0.7 },
+    intro: { ms: 4000, glisseDebut: 500, glisseFin: 2100, retourDebut: 3400, zoom: 0.3,
+             releveDebut: 2000, releveMs: 1000, nomDebut: 2300, nomMs: 1600, sonMs: 2000, nomTaille: 64, nomEspace: 0.22 },
+    vacille: { ms: 500, facteur: 0.3, zoom: 0.3 },
+    fatal: { ms: 1000, facteur: 0.25, zoom: 0.4 },
+    meta: { zoom: 0.4, relacheMs: 400 },
+    mort: { facteur: 0.4, grisMs: 350, texte: 'MORT', taille: 84 },
+    victoire: { statsDebutMs: 1900, texte: 'VICTOIRE', taille: 76, cendresMs: 2200, cendresParSeconde: 150 },
+    kicks: { coupDonne: { delta: 0.035, ms: 220 }, attaqueBoss: { delta: -0.03, ms: 480 } },   // zoom avant à chaque coup, léger recul à chaque attaque
+  },
+
   // Respiration du boss, pour qu'il ne soit jamais immobile
   respiration: { hz: 0.9, amplitude: 1.8, ecrasement: 0.012, hz2: 1.5, amplitude2: 3 },
 
@@ -113,7 +129,7 @@ const SETTINGS = {
 
   // Mort et victoire (lot 2)
   mortMs: 1200,               // de la mort à la reprise, moins de 2 secondes
-  victoireAttenteMs: 800,     // avant de pouvoir relancer après la victoire
+  victoireAttenteMs: 3200,    // avant de pouvoir relancer après la victoire : le temps de lire les chiffres
 
   // Sprites (lot 4) : taille d'une vignette, point d'appui au sol, échelle
   heroSprite: { largeur: 120, hauteur: 80, pivotX: 55, pivotY: 80 },
@@ -428,6 +444,11 @@ const SETTINGS = {
       { forme: 'sawtooth', f0: 90, f1: 220, duree: 1.6, volume: 0.22 },
       { forme: 'sine', f0: 70, f1: 24, duree: 0.9, volume: 0.95, retard: 1.5 },
       { bruit: true, filtre: 'highpass', hz: 1500, duree: 0.7, volume: 0.5, retard: 1.5 },
+    ],
+    entreeBoss: [   // Grimalkin se redresse
+      { forme: 'sine', f0: 62, f1: 24, duree: 1.7, volume: 0.85 },
+      { bruit: true, filtre: 'lowpass', hz: 520, duree: 1.5, volume: 0.35 },
+      { forme: 'sawtooth', f0: 80, f1: 52, duree: 1.3, volume: 0.28, lp: 300, vib: [6, 8] },
     ],
     rale: [      // le râle du boss au début de chaque attaque
       { forme: 'sawtooth', f0: 88, f1: 46, duree: 0.7, volume: 0.34, lp: 320, vib: [7, 6] },

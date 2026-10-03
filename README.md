@@ -43,7 +43,7 @@ Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer (et
 - [x] 9. Monstres personnalisés
 - [x] 10. Environnement
 - [x] 11. Ambiance sonore
-- [ ] 12. Mise en scène
+- [x] 12. Mise en scène
 - [ ] 13. Réglage final
 
 ## Règles du projet
