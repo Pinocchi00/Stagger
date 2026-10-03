@@ -44,7 +44,7 @@ Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer (et
 - [x] 10. Environnement
 - [x] 11. Ambiance sonore
 - [x] 12. Mise en scène
-- [ ] 13. Réglage final
+- [x] 13. Réglage final (mesuré par simulation, à confirmer en jouant)
 
 ## Règles du projet
 

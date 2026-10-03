@@ -14,7 +14,7 @@ const SETTINGS = {
   heroLargeur: 40,
   heroHauteur: 80,
   heroDepartX: 350,           // position de départ, depuis la gauche
-  vie: 110,
+  vie: 115,
   vitesseMarche: 260,         // unités par seconde
 
   // Endurance (lot 1)
@@ -82,10 +82,10 @@ const SETTINGS = {
   phase1Part: 0.5,            // part de la vie que fait perdre la phase 1
   phase2: {                   // la phase 2 est bien plus dure
     vitesseFacteur: 1.7,      // marche
-    annonceFacteur: 0.65,      // durée des élans : le boss annonce ses coups plus vite
+    annonceFacteur: 0.68,      // durée des élans : le boss annonce ses coups plus vite
     ouvertureMs: 350,         // ouverture après chaque attaque
     secondeLameMs: 140,       // la seconde lame frappe juste après la première
-    degatsFacteur: 1.4,
+    degatsFacteur: 1.35,
     sortMarqueFacteur: 0.8,   // les marques explosent plus vite
     pluieMarques: 5,          // marques de la Pluie de sorts
     pluieEcartMs: 250,
