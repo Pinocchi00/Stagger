@@ -146,6 +146,13 @@ ajuster();
 // Tous les sons sont produits par le code. Ils se débloquent au premier toucher.
 let ac = null;
 let tampon = null;
+let sortie = null;        // sortie générale
+let fondBus = null;       // vent, bourdon et tambour passent par ici : il baisse à chaque coup
+let ambiance = null;      // nœuds continus : vent, bourdon
+let prochainTambour = 0;
+let pasHerosT = 0, pasBossT = 0;
+let silenceAudio = 1;     // 1 : le fond joue ; 0 : silence complet
+
 function initAudio() {
   if (ac) return;
   try {
@@ -154,14 +161,87 @@ function initAudio() {
     tampon = ac.createBuffer(1, n, ac.sampleRate);
     const data = tampon.getChannelData(0);
     for (let i = 0; i < n; i++) data[i] = Math.random() * 2 - 1;
+    sortie = ac.createGain();
+    // un compresseur de sécurité : quand tout sonne ensemble, ça ne sature pas
+    const compresseur = ac.createDynamicsCompressor();
+    compresseur.threshold.value = -16;
+    compresseur.ratio.value = 5;
+    compresseur.attack.value = 0.004;
+    compresseur.release.value = 0.2;
+    sortie.connect(compresseur);
+    compresseur.connect(ac.destination);
+    fondBus = ac.createGain();
+    fondBus.gain.value = S.ambiance.fond;
+    fondBus.connect(sortie);
+    creerAmbiance();
   } catch (e) { ac = null; }
   if (ac && ac.resume) ac.resume();
 }
 
-// Un son est une liste de composants : un oscillateur (glissant de f0 à f1) ou un bruit filtré
-function jouer(nom) {
+// Le vent (bruit filtré, qui souffle par rafales) et le bourdon grave (deux lames désaccordées et un sous-grave)
+function creerAmbiance() {
+  const A = S.ambiance, noeuds = {};
+  const vent = ac.createBufferSource();
+  vent.buffer = tampon;
+  vent.loop = true;
+  noeuds.ventFiltre = ac.createBiquadFilter();
+  noeuds.ventFiltre.type = 'bandpass';
+  noeuds.ventFiltre.frequency.value = A.vent.hz;
+  noeuds.ventFiltre.Q.value = A.vent.q;
+  noeuds.ventGain = ac.createGain();
+  noeuds.ventGain.gain.value = 0;
+  vent.connect(noeuds.ventFiltre).connect(noeuds.ventGain).connect(fondBus);
+  vent.start();
+
+  noeuds.bourdonFiltre = ac.createBiquadFilter();
+  noeuds.bourdonFiltre.type = 'lowpass';
+  noeuds.bourdonFiltre.frequency.value = A.bourdon.filtre;
+  noeuds.bourdonGain = ac.createGain();
+  noeuds.bourdonGain.gain.value = 0;
+  noeuds.bourdonFiltre.connect(noeuds.bourdonGain).connect(fondBus);
+  for (const [type, f, v] of [['sawtooth', A.bourdon.f, 0.5], ['sawtooth', A.bourdon.f + A.bourdon.desaccord, 0.5], ['sine', A.bourdon.f / 2, 0.9]]) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type;
+    o.frequency.value = f;
+    g.gain.value = v;
+    o.connect(g).connect(noeuds.bourdonFiltre);
+    o.start();
+  }
+  // la note dissonante de la phase 2 : un triton au-dessus du bourdon
+  noeuds.dissoFiltre = ac.createBiquadFilter();
+  noeuds.dissoFiltre.type = 'lowpass';
+  noeuds.dissoFiltre.frequency.value = 340;
+  noeuds.dissoGain = ac.createGain();
+  noeuds.dissoGain.gain.value = 0;
+  const od = ac.createOscillator();
+  od.type = 'sawtooth';
+  od.frequency.value = A.bourdon.f * A.bourdon.dissonance;
+  od.connect(noeuds.dissoFiltre).connect(noeuds.dissoGain).connect(fondBus);
+  od.start();
+  ambiance = noeuds;
+}
+
+// Le fond baisse brièvement pour que le coup ressorte
+function abaisserFond(nom) {
+  const D = S.ambiance.duck[nom];
+  if (!D || !fondBus) return;
+  const t = ac.currentTime, g = fondBus.gain;
+  g.cancelScheduledValues(t);
+  g.setTargetAtTime(S.ambiance.fond * D.niveau, t, 0.012);
+  g.setTargetAtTime(S.ambiance.fond, t + 0.05, D.ms / 1000 / 3);
+}
+
+function panoramique(x) {
+  return Math.max(-1, Math.min(1, (x - cam.x) * cam.z / (window.innerWidth / 2))) * S.ambiance.panoramique;
+}
+
+// Un son est une liste de composants : un oscillateur (glissant de f0 à f1, filtre lp, vibrato vib) ou un bruit filtré.
+// x : position dans le monde, pour placer le son à gauche ou à droite.
+function jouer(nom, x) {
   if (!ac) return;
   const t0 = ac.currentTime;
+  const pan = x === undefined || !ac.createStereoPanner ? null : panoramique(x);
+  abaisserFond(nom);
   for (const c of S.sons[nom]) {
     const t = t0 + (c.retard || 0);
     const g = ac.createGain();
@@ -180,11 +260,89 @@ function jouer(nom) {
       src.type = c.forme;
       src.frequency.setValueAtTime(c.f0, t);
       if (c.f1) src.frequency.exponentialRampToValueAtTime(c.f1, t + c.duree);
-      src.connect(g);
+      if (c.vib) {
+        const lfo = ac.createOscillator(), lg = ac.createGain();
+        lfo.frequency.value = c.vib[0];
+        lg.gain.value = c.vib[1];
+        lfo.connect(lg).connect(src.frequency);
+        lfo.start(t);
+        lfo.stop(t + c.duree);
+      }
+      if (c.lp) {
+        const f = ac.createBiquadFilter();
+        f.type = 'lowpass';
+        f.frequency.value = c.lp;
+        src.connect(f).connect(g);
+      } else src.connect(g);
     }
-    g.connect(ac.destination);
+    if (pan !== null) {
+      const p = ac.createStereoPanner();
+      p.pan.value = pan;
+      g.connect(p);
+      p.connect(sortie);
+    } else g.connect(sortie);
     src.start(t);
     src.stop(t + c.duree);
+  }
+}
+
+// Un coup de tambour grave, planifié à l'instant quand
+function tambour(quand) {
+  const T = S.ambiance.tambour, d = T.ms / 1000;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(T.graveDebut, quand);
+  o.frequency.exponentialRampToValueAtTime(T.graveFin, quand + d);
+  g.gain.setValueAtTime(T.volume, quand);
+  g.gain.exponentialRampToValueAtTime(0.0001, quand + d);
+  o.connect(g).connect(fondBus);
+  o.start(quand);
+  o.stop(quand + d);
+  const b = ac.createBufferSource(), f = ac.createBiquadFilter(), gb = ac.createGain();
+  b.buffer = tampon;
+  f.type = 'lowpass';
+  f.frequency.value = 240;
+  gb.gain.setValueAtTime(T.volume * 0.5, quand);
+  gb.gain.exponentialRampToValueAtTime(0.0001, quand + 0.12);
+  b.connect(f).connect(gb).connect(fondBus);
+  b.start(quand);
+  b.stop(quand + 0.12);
+}
+
+// Chaque image : réglage du vent, du bourdon, du tambour, et des pas
+function majAudio(dt) {
+  if (!ac || !ambiance) return;
+  const A = S.ambiance, t = ac.currentTime, p2 = phase2();
+  const vacille = boss.etat === 'vacille';
+  const muet = vacille || jeu.etat === 'victoire' || jeu.etat === 'mort' || portrait();
+  // silence complet pendant le vacillement : fondu très court, retour plus lent
+  silenceAudio += ((muet ? 0 : 1) - silenceAudio) * Math.min(1, dt / (muet ? A.silenceMs : A.retourMs));
+  const s = silenceAudio;
+  const rafale = 1 + A.vent.rafaleProfondeur * Math.sin(rt / 1000 * Math.PI * 2 * A.vent.rafaleHz) * Math.sin(rt / 2300);
+  ambiance.ventGain.gain.setTargetAtTime(A.vent.gain * (p2 ? A.vent.facteur2 : 1) * rafale * s, t, 0.25);
+  ambiance.ventFiltre.frequency.setTargetAtTime(A.vent.hz * (p2 ? A.vent.hzFacteur2 : 1) * (1 + 0.3 * Math.sin(rt / 3100)), t, 0.4);
+  const respire = 1 + 0.18 * Math.sin(rt / 1000 * Math.PI * 2 * A.bourdon.modHz);
+  ambiance.bourdonGain.gain.setTargetAtTime(A.bourdon.gain * respire * s, t, 0.3);
+  ambiance.bourdonFiltre.frequency.setTargetAtTime(A.bourdon.filtre * (1 + 0.25 * Math.sin(rt / 4300)), t, 0.4);
+  ambiance.dissoGain.gain.setTargetAtTime(p2 ? A.bourdon.dissonanceGain * s * (0.75 + 0.25 * Math.sin(rt / 700)) : 0, t, 0.6);
+
+  // le tambour : un coup toutes les 2 s, deux fois plus vite en phase 2, rien tant que le combat n'a pas commencé
+  if (jeu.etat === 'combat' && !muet) {
+    const periode = (p2 ? A.tambour.periode2 : A.tambour.periode) / 1000;
+    if (prochainTambour < t) prochainTambour = t + 0.15;
+    while (prochainTambour < t + 0.12) { tambour(prochainTambour); prochainTambour += periode; }
+  } else prochainTambour = t + 0.2;
+
+  // les pas
+  if (jeu.etat === 'combat') {
+    if (hero.etat === 'libre' && direction() !== 0) {
+      pasHerosT += dt;
+      if (pasHerosT >= A.pasHerosMs) { pasHerosT = 0; jouer('pasHeros', hero.x); }
+    } else pasHerosT = A.pasHerosMs * 0.6;
+    if (boss.etat === 'marche') {
+      pasBossT += dt;
+      if (pasBossT >= A.pasBossMs * (p2 ? A.pasBossFacteur2 : 1)) { pasBossT = 0; jouer('pasBoss', boss.x); }
+    } else pasBossT = A.pasBossMs * 0.5;
   }
 }
 
@@ -407,6 +565,11 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => clavier.delete(e.code));
 window.addEventListener('blur', () => { clavier.clear(); touches.clear(); });
 window.addEventListener('contextmenu', e => e.preventDefault());
+// Le son se tait quand la page passe en arrière-plan
+document.addEventListener('visibilitychange', () => {
+  if (!ac) return;
+  if (document.hidden) ac.suspend(); else ac.resume();
+});
 
 // ---------- Mise à jour ----------
 function chevauche(a1, a2, b1, b2) { return a1 < b2 && b1 < a2; }
@@ -530,7 +693,7 @@ function lancerBond() {
   boss.t = 0;
   boss.dir = hero.x >= boss.x ? 1 : -1;
   boss.dash = { de: boss.x, vers: boss.x + sens * Math.min(S.bond.distance, place), t0: 0, dernierEcho: -1e9 };
-  jouer('bond');
+  jouer('bond', boss.x);
 }
 
 const ATTAQUES_FAUCHAGE = ['fauchage', 'retarde', 'double'];
@@ -538,7 +701,8 @@ const ATTAQUES_A_DISTANCE = ['sort', 'pluie', 'orbe', 'ruee'];
 
 function lancerBoss(nom) {
   const fauchage = ATTAQUES_FAUCHAGE.includes(nom);
-  jouer(fauchage ? 'annonceFauchage' : nom === 'ruee' ? 'annonceRuee' : nom === 'orbe' ? 'annonceOrbe' : 'annonceSort');
+  jouer('rale', boss.x);
+  jouer({ fauchage: 'annonceFauchage', retarde: 'annonceRetarde', double: 'annonceDouble', sort: 'annonceSort', pluie: 'annoncePluie', orbe: 'annonceOrbe', ruee: 'annonceRuee' }[nom], boss.x);
   boss.etat = fauchage ? 'fauchage' : nom === 'ruee' ? 'ruee' : nom === 'orbe' ? 'orbe' : 'sort';
   boss.variante = nom === 'fauchage' ? 'normal' : nom;
   boss.fa = facteurAnnonce();
@@ -662,7 +826,7 @@ function majBoss(dt) {
     const temps = tempsFrappes();
     while (boss.frappes < temps.length && boss.t >= temps[boss.frappes]) {
       boss.frappes++;
-      jouer('fauchage');
+      jouer('fauchage', boss.x);
       coupDuBoss(S.fauchageDegats);
     }
     // Le double Fauchage se retourne vers le héros avant le second coup
@@ -678,7 +842,7 @@ function majBoss(dt) {
       boss.dir = hero.x >= boss.x ? 1 : -1;
       const vers = Math.max(boss.w / 2 + 20, Math.min(S.arenaLargeur - boss.w / 2 - 20, hero.x + boss.dir * R.depassement));
       boss.dash = { de: boss.x, vers, t0: boss.t, ms: Math.max(220, Math.abs(vers - boss.x) / R.vitesse * 1000), dernierEcho: -1e9 };
-      jouer('ruee');
+      jouer('ruee', boss.x);
     }
     if (boss.dash) {
       const d = boss.dash, p = Math.min(1, (boss.t - d.t0) / d.ms);
@@ -704,7 +868,7 @@ function majBoss(dt) {
     while (boss.tirs < nb && boss.t >= A + boss.tirs * O.ecartMs) {
       boss.tirs++;
       projectiles.push({ x: boss.x + boss.dir * (boss.w / 2 + 12), y: S.solY - O.hauteur, vx: boss.dir * O.vitesse * (phase2() ? O.phase2Vitesse : 1), t0: rt });
-      jouer('orbeLancee');
+      jouer('orbeLancee', boss.x);
     }
     if (boss.tirs >= nb && boss.t >= A + (nb - 1) * O.ecartMs + O.recupMs) ouverture();
   } else if (boss.etat === 'sort') {
@@ -719,7 +883,7 @@ function majBoss(dt) {
         m.applique = true;
         eclair = rt;
         lumiereBreve('explosion', m.x, S.solY - 30);
-        jouer('explosion');
+        jouer('explosion', m.x);
         if (chevauche(heroG(), heroD(), m.x - S.sortRayon, m.x + S.sortRayon)) heroTouche(S.sortDegats * facteurDegats());
       }
     }
@@ -1866,7 +2030,8 @@ function boucle(now) {
     majCamera(dt);
     majEffets(dt);
     majParticules(dt);
-  }
+    majAudio(dt);
+  } else majAudio(dt);
   dessiner();
 }
 requestAnimationFrame(boucle);

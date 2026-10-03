@@ -1,7 +1,7 @@
 // Fichier de réglages : toutes les valeurs chiffrées du jeu vivent ici.
 // Les valeurs des lots suivants s'y ajoutent au fil des lots.
 const SETTINGS = {
-  version: 10,                 // change à chaque mise à jour des images, pour que le téléphone les recharge
+  version: 11,                 // change à chaque mise à jour des images, pour que le téléphone les recharge
   fps: 60,
   dtMaxMs: 100,               // plus long pas de temps accepté entre deux images
 
@@ -334,9 +334,33 @@ const SETTINGS = {
 
   // Sons produits par le code (lot 5) : oscillateur { forme, f0, f1 } ou bruit filtré { bruit, hz, filtre }
   sonVolume: 0.65,
+  // Ambiance sonore (lot 11) : un vent et un bourdon continus, un tambour, des pas, et un fond qui baisse à chaque coup
+  ambiance: {
+    fond: 0.9,                  // volume du fond (vent, bourdon, tambour)
+    vent: { hz: 520, q: 0.7, gain: 0.17, facteur2: 1.9, hzFacteur2: 1.5, rafaleHz: 0.11, rafaleProfondeur: 0.45 },
+    bourdon: { f: 55, gain: 0.2, desaccord: 0.35, filtre: 170, modHz: 0.07, dissonance: 1.4142, dissonanceGain: 0.13 },
+    tambour: { periode: 2000, periode2: 1000, volume: 0.6, graveDebut: 112, graveFin: 40, ms: 380 },
+    silenceMs: 60,              // fondu vers le silence quand le boss vacille
+    retourMs: 450,              // retour du fond après un vacillement
+    pasHerosMs: 300,            // écart entre deux pas du héros
+    pasBossMs: 560,             // et entre deux pas du boss
+    pasBossFacteur2: 0.75,      // il marche plus vite en phase 2
+    panoramique: 0.7,           // les sons du boss viennent de son côté de l'écran
+    duck: {                     // le fond baisse à chaque coup : niveau atteint, puis retour en ms
+      coupDonne: { niveau: 0.42, ms: 300 }, coupRecu: { niveau: 0.22, ms: 560 }, paradeParfaite: { niveau: 0.18, ms: 650 },
+      paradeSimple: { niveau: 0.4, ms: 380 }, explosion: { niveau: 0.28, ms: 520 }, fauchage: { niveau: 0.5, ms: 280 },
+      coupBloque: { niveau: 0.65, ms: 160 }, mort: { niveau: 0.1, ms: 900 }, metamorphose: { niveau: 0.3, ms: 1400 },
+    },
+  },
   sons: {
-    attaque: [{ bruit: true, filtre: 'highpass', hz: 2500, duree: 0.12, volume: 0.18 }],
-    esquive: [{ bruit: true, filtre: 'lowpass', hz: 700, duree: 0.25, volume: 0.2 }],
+    attaque: [      // le sifflement de la lame
+      { bruit: true, filtre: 'highpass', hz: 2500, duree: 0.14, volume: 0.18 },
+      { forme: 'sine', f0: 900, f1: 2100, duree: 0.13, volume: 0.05 },
+    ],
+    esquive: [      // le souffle de l'esquive
+      { bruit: true, filtre: 'lowpass', hz: 900, duree: 0.28, volume: 0.24 },
+      { forme: 'sine', f0: 320, f1: 120, duree: 0.22, volume: 0.1 },
+    ],
     coupDonne: [
       { forme: 'square', f0: 260, f1: 90, duree: 0.1, volume: 0.25 },
       { bruit: true, filtre: 'lowpass', hz: 2200, duree: 0.08, volume: 0.25 },
@@ -404,6 +428,34 @@ const SETTINGS = {
       { forme: 'sawtooth', f0: 90, f1: 220, duree: 1.6, volume: 0.22 },
       { forme: 'sine', f0: 70, f1: 24, duree: 0.9, volume: 0.95, retard: 1.5 },
       { bruit: true, filtre: 'highpass', hz: 1500, duree: 0.7, volume: 0.5, retard: 1.5 },
+    ],
+    rale: [      // le râle du boss au début de chaque attaque
+      { forme: 'sawtooth', f0: 88, f1: 46, duree: 0.7, volume: 0.34, lp: 320, vib: [7, 6] },
+      { bruit: true, filtre: 'lowpass', hz: 380, duree: 0.6, volume: 0.22 },
+    ],
+    annonceRetarde: [   // élan tenu : un scintillement aigu qui dure, sur un grondement
+      { forme: 'sine', f0: 1500, duree: 1.1, volume: 0.1, vib: [6, 28] },
+      { forme: 'sawtooth', f0: 110, f1: 150, duree: 1.1, volume: 0.14, lp: 500 },
+      { forme: 'square', f0: 2400, duree: 0.03, volume: 0.2 },
+    ],
+    annonceDouble: [    // deux balayages qui montent, l'un derrière l'autre
+      { forme: 'sawtooth', f0: 170, f1: 420, duree: 0.4, volume: 0.1 },
+      { forme: 'sawtooth', f0: 170, f1: 420, duree: 0.4, volume: 0.1, retard: 0.42 },
+    ],
+    annoncePluie: [     // des pulsations de plus en plus aiguës
+      { forme: 'sine', f0: 300, duree: 0.26, volume: 0.16 },
+      { forme: 'sine', f0: 380, duree: 0.26, volume: 0.16, retard: 0.12 },
+      { forme: 'sine', f0: 480, duree: 0.26, volume: 0.16, retard: 0.24 },
+      { forme: 'sine', f0: 600, duree: 0.26, volume: 0.16, retard: 0.36 },
+      { forme: 'sine', f0: 760, duree: 0.3, volume: 0.16, retard: 0.48 },
+    ],
+    pasHeros: [
+      { bruit: true, filtre: 'lowpass', hz: 700, duree: 0.07, volume: 0.2 },
+      { forme: 'sine', f0: 150, f1: 80, duree: 0.09, volume: 0.16 },
+    ],
+    pasBoss: [
+      { forme: 'sine', f0: 72, f1: 28, duree: 0.34, volume: 0.7 },
+      { bruit: true, filtre: 'lowpass', hz: 260, duree: 0.24, volume: 0.34 },
     ],
     mort: [{ forme: 'sine', f0: 80, f1: 25, duree: 1.0, volume: 0.5 }],
     victoire: [

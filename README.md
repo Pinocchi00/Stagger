@@ -42,7 +42,7 @@ Au clavier, pour tester sur PC : flèches pour marcher, espace pour attaquer (et
 - [x] 8. Réglage du combat (premier passage mesuré par simulation, à confirmer en jouant)
 - [x] 9. Monstres personnalisés
 - [x] 10. Environnement
-- [ ] 11. Ambiance sonore
+- [x] 11. Ambiance sonore
 - [ ] 12. Mise en scène
 - [ ] 13. Réglage final
 
