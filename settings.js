@@ -1,7 +1,7 @@
 // Fichier de réglages : toutes les valeurs chiffrées du jeu vivent ici.
 // Les valeurs des lots suivants s'y ajoutent au fil des lots.
 const SETTINGS = {
-  version: 9,                 // change à chaque mise à jour des images, pour que le téléphone les recharge
+  version: 10,                 // change à chaque mise à jour des images, pour que le téléphone les recharge
   fps: 60,
   dtMaxMs: 100,               // plus long pas de temps accepté entre deux images
 
@@ -176,7 +176,7 @@ const SETTINGS = {
     ],
     pres: { img: 'decor-pres', parallaxe: 0.14, bas: 6 },       // tombes, statues, grille, arbre mort : posés sur le sol
     solFond: '#0c0a0e',       // sous les dalles
-    lumiere: { rayon: 360, alpha: 0.16, couleur: '200,60,28', aplat: 0.26 },   // sol éclairé par les flammes
+    lumiere: { rayon: 360, alpha: 0.1, couleur: '200,60,28', aplat: 0.26 },    // sol éclairé par les flammes
     brume: [                  // deux nappes qui dérivent, images tuilées
       { img: 'decor-brume1', vitesse: 7, echelle: 1.1, y: -6, alpha: 0.5, devant: false },
       { img: 'decor-brume2', vitesse: -13, echelle: 1.2, y: 14, alpha: 0.22, devant: true },
@@ -185,10 +185,39 @@ const SETTINGS = {
     braises: { vxFacteur: 2.2, vyFacteur: 1.3, couleur: '#ff8a2a' }, // la phase 2 transforme les cendres en braises
     premierPlan: { img: 'decor-premier-plan', parallaxe: -0.22, alpha: 0.92, x: 110, bas: 120 },
     vignette: { alpha: 0.66, depart: 0.36 },     // départ : part du rayon où l'assombrissement commence
-    halo: { rayon: 200, alpha: 0.15, hauteur: 80, couleur: '190,40,16' }, // derrière le boss
+    halo: { rayon: 200, alpha: 0.07, hauteur: 80, couleur: '190,40,16' }, // derrière le boss
     haloHeros: { rayon: 80, alpha: 0.12, hauteur: 40, couleur: '200,215,235' }, // lueur froide qui détache le héros du décor
     eclair: { ms: 130, alpha: 0.28, couleur: '255,235,220' }, // à l'explosion d'un Sort
     phase2: { rougeAlpha: 0.07 },
+  },
+
+  // Lumières (lot 10) : une carte de lumière multiplie l'image (l'ombre ambiante, percée par chaque source),
+  // puis une seconde passe ajoute l'éclat des sources. Couleurs en 'r,g,b'.
+  lumiere: {
+    resolution: 0.5,            // la carte est calculée à demi-résolution : elle est floue, donc douce
+    ambiante: '94,102,140',    // le monde sans lumière : bleu nuit
+    ambiante2: '150,102,112',   // en phase 2 : la scène vire au rouge
+    changementMs: 1500,         // temps du passage d'une ambiance à l'autre
+    lueurAlpha: 0.3,            // force de la passe d'éclat
+    lune: { x: 0.74, y: 0.2, rayon: 1.05, couleur: '120,142,200', alpha: 0.5, lueur: 0.5 },   // rayon : part de la largeur de l'écran
+    heros: { rayon: 120, hauteur: 46, couleur: '120,146,200', alpha: 0.55, lueur: 0.3 },       // lueur froide autour du guerrier
+    flammes: { rayon: 140, couleur: '255,130,50', couleur2: '255,160,80', alpha: 0.72, lueur: 0.5, scintillementHz: 9 },
+    corps: { rayon: 130, hauteur: 70, couleur: '255,100,44', alpha: 0.22, lueur: 0.1 },       // le boss éclairé par ses flammes
+    tete: { rayon: 70, couleur: '255,70,30', alpha: 0.4, lueur: 0.25 },
+    orbe: { rayon: 130, couleur: '255,110,40', alpha: 0.9, lueur: 0.8 },
+    marque: { rayon: 2.2, couleur: '255,110,40', alpha: 0.9, lueur: 0.6 },                      // rayon : en rayons de la marque
+    coupParfait: { rayon: 230, couleur: '255,238,196', alpha: 1, lueur: 1, ms: 240 },
+    coupParade: { rayon: 130, couleur: '200,220,255', alpha: 0.6, lueur: 0.6, ms: 150 },
+    coupDonne: { rayon: 150, couleur: '255,170,80', alpha: 0.8, lueur: 0.7, ms: 170 },
+    coupBloque: { rayon: 90, couleur: '210,220,240', alpha: 0.45, lueur: 0.4, ms: 110 },
+    coupRecu: { rayon: 180, couleur: '220,36,28', alpha: 0.85, lueur: 0.6, ms: 240 },
+    coupBoss: { rayon: 170, couleur: '236,236,255', alpha: 0.6, lueur: 0.5, ms: 130 },
+    explosion: { rayon: 280, couleur: '255,130,56', alpha: 1, lueur: 1, ms: 340 },
+    eclairBoost: 1.0,           // l'éclair d'un Sort éclaire tout, brièvement
+    rayons: {                   // faisceaux de lune qui tombent des baies de la ruine
+      nombre: 6, parallaxe: 0.05, couleur: '176,192,240', alpha: 0.075, largeurHaut: 24, largeurBas: 120,
+      hauteur: 330, inclinaison: 170, respirationHz: 0.35,
+    },
   },
 
   // Les cinq queues de Grimalkin : des échines d'os calcinées, des flammes sombres au bout

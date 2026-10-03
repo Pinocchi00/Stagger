@@ -20,6 +20,9 @@ let projectiles = [];     // orbes du boss : { x, y, vx, t0 }
 let particules = [];      // cendres du corps, poussière, étincelles : { type, x, y, vx, vy, t0, vie }
 let echos = [];           // images rémanentes du boss pendant ses fentes : { x, dir, nom, f, t0 }
 let fxListe = [];         // sprites d'impact en cours : { nom, x, y, miroir, t0 }
+let lumieresTemps = [];   // lumières brèves : { x, y, regle, t0 }
+let cartes = null;        // cartes de lumière : { ambiante, lueur }
+let ambianceT = 0;        // 0 : ambiance de la phase 1, 1 : phase 2
 let flashMeta = -1e9;     // instant du flash de la métamorphose
 let spriteFumee = null;   // tache de fumée douce
 let eclair = -1e9;        // instant du dernier éclair, en temps réel
@@ -62,6 +65,7 @@ function ajuster() {
   canvas.style.height = window.innerHeight + 'px';
   kui = window.innerHeight / S.hauteurInterface;
   genererCendres();
+  creerCartes();
   if (hero.x !== undefined) { const c = cibleCamera(); cam.x = c.x; cam.z = c.z; }
 }
 
@@ -123,6 +127,8 @@ function recommencer() {
   echos = [];
   fxListe = [];
   particules = [];
+  lumieresTemps = [];
+  ambianceT = 0;
   jeu.etat = 'combat';
   jeu.t = 0;
   const c = cibleCamera();
@@ -237,6 +243,7 @@ function esquiver(dir) {
 function heroTouche(degats) {
   if (invulnerable()) return;
   hero.vie = Math.max(0, hero.vie - degats);
+  lumiereBreve('coupRecu', hero.x, S.solY - S.heroHauteur * 0.55);
   lancerFx('fx-degat-heros', hero.x, S.solY - S.heroHauteur * 0.55, boss.x > hero.x);
   impact(S.arretCoupRecuMs, S.tremblementCoupRecuMs, S.tremblementCoupRecuPx);
   jouer('coupRecu');
@@ -295,6 +302,7 @@ function creerImpact(type) {
 
 function heroParade(type) {
   creerImpact(type);
+  lumiereBreve(type === 'parfaite' ? 'coupParfait' : 'coupParade', hero.x + hero.dir * S.heroLargeur * S.contactX, S.solY - S.heroHauteur * S.contactY);
   lancerFx(type === 'parfaite' ? 'fx-parade-parfaite' : 'fx-parade-simple', hero.x + hero.dir * S.heroLargeur * S.contactX, S.solY - S.heroHauteur * S.contactY, hero.dir < 0);
   eteindreFlamme();
   if (type === 'parfaite') {
@@ -437,6 +445,7 @@ function frapperBoss() {
   }
   const cx = hero.x + hero.dir * (S.heroLargeur / 2 + S.attaquePortee * 0.7), cy = S.solY - S.heroHauteur * 0.9;
   etincelles(cx, cy, hero.dir);
+  lumiereBreve(bloque ? 'coupBloque' : 'coupDonne', cx, cy);
   if (bloque) {
     lancerFx('fx-bloque', cx, cy, hero.dir < 0);
     jouer('coupBloque');
@@ -593,6 +602,7 @@ function zoneFauchage() {
 // Le coup du boss tombe sur le héros : paré, ou subi
 function coupDuBoss(degats) {
   const [g, dr] = zoneFauchage();
+  lumiereBreve('coupBoss', boss.x + boss.dir * (boss.w / 2 + S.fauchagePortee * 0.6), S.solY - 55);
   if (!chevauche(heroG(), heroD(), g, dr)) return;
   const parade = resultatParade();
   if (parade) heroParade(parade);
@@ -708,6 +718,7 @@ function majBoss(dt) {
       if (!m.applique && boss.t >= m.t0 + m.delai) {
         m.applique = true;
         eclair = rt;
+        lumiereBreve('explosion', m.x, S.solY - 30);
         jouer('explosion');
         if (chevauche(heroG(), heroD(), m.x - S.sortRayon, m.x + S.sortRayon)) heroTouche(S.sortDegats * facteurDegats());
       }
@@ -1452,6 +1463,131 @@ function dessinerRunes(m) {
 }
 
 // Images rémanentes du boss pendant ses fentes
+// ---- Lumières ----
+function creerCartes() {
+  const k = S.lumiere.resolution, w = Math.max(2, Math.round(window.innerWidth * k)), h = Math.max(2, Math.round(window.innerHeight * k));
+  const faire = () => { const c = document.createElement('canvas'); c.width = w; c.height = h; return { c, g: c.getContext('2d') }; };
+  cartes = { ambiante: faire(), lueur: faire(), k };
+}
+
+// Une lumière brève, posée dans le monde : elle s'éteint en S.lumiere[regle].ms
+function lumiereBreve(regle, x, y) {
+  lumieresTemps.push({ x, y, regle, t0: rt });
+}
+
+function melange(a, b, t) {
+  const A = a.split(',').map(Number), B = b.split(',').map(Number);
+  return A.map((v, i) => Math.round(v + (B[i] - v) * t));
+}
+
+// Fabrique la carte de lumière, puis la pose sur l'image : multiplication (ombre), puis éclat additif
+function dessinerLumieres(cx) {
+  if (!cartes) return;
+  const W = window.innerWidth, H = window.innerHeight, z = cam.z, L = S.lumiere, k = cartes.k;
+  const A = cartes.ambiante.g, E = cartes.lueur.g;
+  const sx = (x) => (W / 2 + (x - cx) * z) * k, sy = (y) => (H * S.solEcranRatio + (y - S.solY) * z) * k;
+  // ambiance : bleu nuit, rouge en phase 2, éclairée d'un coup par l'éclair d'un Sort
+  const cible = phase2() ? 1 : 0;
+  ambianceT += (cible - ambianceT) * Math.min(1, 16 / L.changementMs * 60 / 60);
+  const ea = (rt - eclair) / S.decor.eclair.ms;
+  const boost = ea >= 0 && ea < 1 ? (1 - ea) * L.eclairBoost : 0;
+  const amb = melange(L.ambiante, L.ambiante2, ambianceT).map(v => Math.min(255, Math.round(v + boost * (255 - v) * 0.7)));
+  A.globalCompositeOperation = 'source-over';
+  A.fillStyle = `rgb(${amb[0]},${amb[1]},${amb[2]})`;
+  A.fillRect(0, 0, cartes.ambiante.c.width, cartes.ambiante.c.height);
+  E.fillStyle = '#000';
+  E.fillRect(0, 0, cartes.lueur.c.width, cartes.lueur.c.height);
+  A.globalCompositeOperation = 'lighter';
+  E.globalCompositeOperation = 'lighter';
+
+  const source = (x, y, rayon, couleur, alpha, lueur) => {
+    const r = rayon * z * k;
+    if (r < 1 || alpha <= 0.01) return;
+    for (const [g, a] of [[A, alpha], [E, alpha * lueur]]) {
+      const gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, `rgba(${couleur},${Math.min(1, a)})`);
+      gr.addColorStop(0.45, `rgba(${couleur},${Math.min(1, a) * 0.38})`);
+      gr.addColorStop(1, `rgba(${couleur},0)`);
+      g.fillStyle = gr;
+      g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+  };
+
+  // la lune : une grande lumière froide venue d'en haut à droite
+  const m = L.lune, mx = W * m.x * k, my = H * m.y * k, mr = W * m.rayon * k;
+  for (const [g, a] of [[A, m.alpha], [E, m.alpha * m.lueur]]) {
+    const gr = g.createRadialGradient(mx, my, 0, mx, my, mr);
+    gr.addColorStop(0, `rgba(${m.couleur},${a})`);
+    gr.addColorStop(1, `rgba(${m.couleur},0)`);
+    g.fillStyle = gr;
+    g.fillRect(0, 0, cartes.ambiante.c.width, cartes.ambiante.c.height);
+  }
+  // le guerrier garde une lueur froide : il reste lisible
+  source(sx(hero.x), sy(S.solY - L.heros.hauteur), L.heros.rayon, L.heros.couleur, L.heros.alpha, L.heros.lueur);
+
+  // le boss et ses flammes
+  if (jeu.etat !== 'victoire' || jeu.t < S.bossMortMs) {
+    const fg = facteurFlammes();
+    const F = L.flammes, scint = (i) => 0.78 + 0.22 * Math.sin(rt / 1000 * Math.PI * 2 * F.scintillementHz + i * 1.9) + 0.06 * Math.sin(rt / 90 + i);
+    geometrieQueues().forEach((pts, i) => {
+      const fi = fg * fondu(i);
+      if (fi < 0.03) return;
+      const bout = pts[pts.length - 1];
+      source(sx(bout[0]), sy(bout[1] - 8), F.rayon * Math.min(1.5, fi), phase2() ? F.couleur2 : F.couleur, F.alpha * scint(i), F.lueur);
+    });
+    const lum = intensiteFlammes();
+    source(sx(boss.x), sy(S.solY - L.corps.hauteur * M.echelle), L.corps.rayon * M.echelle, L.corps.couleur, L.corps.alpha * Math.min(1.4, lum * 1.4), L.corps.lueur);
+    source(sx(boss.x), sy(S.solY - M.effets.lueurTete.hauteur * M.echelle), L.tete.rayon, M.effets.lueurTete.couleur, L.tete.alpha * (0.7 + 0.3 * Math.sin(rt / 1000 * Math.PI * 2 * M.effets.lueurTete.pulseHz)), L.tete.lueur);
+  }
+  // orbes et marques du Sort
+  for (const p of projectiles) source(sx(p.x), sy(p.y), L.orbe.rayon, L.orbe.couleur, L.orbe.alpha, L.orbe.lueur);
+  for (const mq of boss.marques) {
+    const t = boss.t - mq.t0, f = mq.applique ? 1 : Math.min(1, 0.25 + 0.75 * t / mq.delai);
+    source(sx(mq.x), sy(S.solY - 8), S.sortRayon * L.marque.rayon, L.marque.couleur, L.marque.alpha * f, L.marque.lueur);
+  }
+  // lumières brèves : impacts, coups, explosions
+  lumieresTemps = lumieresTemps.filter(l => rt - l.t0 < L[l.regle].ms);
+  for (const l of lumieresTemps) {
+    const R = L[l.regle], a = 1 - (rt - l.t0) / R.ms;
+    source(sx(l.x), sy(l.y), R.rayon, R.couleur, R.alpha * a, R.lueur);
+  }
+
+  // pose : l'ombre multiplie l'image, l'éclat s'ajoute
+  ctx.save();
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.drawImage(cartes.ambiante.c, 0, 0, W, H);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = L.lueurAlpha;
+  ctx.drawImage(cartes.lueur.c, 0, 0, W, H);
+  ctx.restore();
+}
+
+// Faisceaux de lune qui tombent des baies : de la lumière dans l'air, qui respire doucement
+function dessinerRayons(cx) {
+  const R = S.lumiere.rayons;
+  const off = -(cx - S.arenaLargeur / 2) * R.parallaxe;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < R.nombre; i++) {
+    const xb = -120 + (S.arenaLargeur + 240) * (i + 0.5) / R.nombre + off;   // pied du faisceau
+    const xh = xb + R.inclinaison;                                           // sommet : plus à droite, vers la lune
+    const yb = S.solY + 8, yh = S.solY - R.hauteur;
+    const vie = 0.7 + 0.3 * Math.sin(rt / 1000 * Math.PI * 2 * R.respirationHz + i * 1.3);
+    const g = ctx.createLinearGradient(xh, yh, xb, yb);
+    g.addColorStop(0, `rgba(${R.couleur},${R.alpha * vie})`);
+    g.addColorStop(1, `rgba(${R.couleur},0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(xh - R.largeurHaut / 2, yh);
+    ctx.lineTo(xh + R.largeurHaut / 2, yh);
+    ctx.lineTo(xb + R.largeurBas / 2, yb);
+    ctx.lineTo(xb - R.largeurBas / 2, yb);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 // Ombre douce sous un personnage, posée sur les dalles
 function dessinerOmbre(x, largeur) {
   const O = S.ombre, rx = largeur / 2;
@@ -1633,6 +1769,7 @@ function dessiner() {
   ctx.imageSmoothingEnabled = false;
   for (const c of S.decor.couches) dessinerCouche(c.img, c.parallaxe, cx);
   dessinerSol();
+  dessinerRayons(cx);
   dessinerCouche(S.decor.pres.img, S.decor.pres.parallaxe, cx, S.decor.pres.bas);
   dessinerBrume(false);
   dessinerHalo();
@@ -1684,6 +1821,7 @@ function dessiner() {
 
   // Couches posées sur l'image, en pixels de l'écran
   ctx.setTransform(d, 0, 0, d, 0, 0);
+  dessinerLumieres(cx);
   if (!imageBlanche) dessinerAtmosphere();
 
   // Interface : seule la vie du boss est affichée, la vie et l'endurance du héros se lisent dans l'image
